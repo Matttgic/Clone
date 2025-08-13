@@ -1,4 +1,3 @@
-**README.md**
 ```markdown
 # 🎯 Football Clone Detector
 
