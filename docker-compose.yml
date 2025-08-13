@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  football-clone-detector:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    environment:
+      - PYTHONPATH=/app
+    restart: unless-stopped
+    
+  # Service pour les mises à jour automatiques
+  data-updater:
+    build: .
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    environment:
+      - PYTHONPATH=/app
+    command: python scripts/update_data.py
+    profiles:
+      - updater
