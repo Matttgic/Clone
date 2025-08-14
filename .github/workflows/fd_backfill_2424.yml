@@ -1,7 +1,7 @@
 name: Football-Data Backfill 2024-2025
 
 on:
-  workflow_dispatch:  # Lancement manuel depuis GitHub Actions
+  workflow_dispatch:
 
 jobs:
   backfill:
@@ -21,25 +21,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Set PYTHONPATH
+        run: echo "PYTHONPATH=$GITHUB_WORKSPACE" >> $GITHUB_ENV
+
       - name: Reset DB (start fresh)
-        run: |
-          rm -f data/football.db
+        run: rm -f data/football.db
 
       - name: Ingest ALL CSVs for 2024-2025
-        run: |
-          python -u scripts/fd_ingest.py
+        run: python -u scripts/fd_ingest.py
 
       - name: Build ELO ratings (full season)
-        run: |
-          python -u scripts/build_elo_history.py
+        run: python -u scripts/build_elo_history.py
 
       - name: Compute odds method stats
-        run: |
-          python -u scripts/odds_method_stats.py
+        run: python -u scripts/odds_method_stats.py
 
       - name: Generate predictions
-        run: |
-          python -u scripts/generate_predictions.py
+        run: python -u scripts/generate_predictions.py
 
       - name: Commit updated DB & predictions
         run: |
