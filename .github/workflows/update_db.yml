@@ -10,59 +10,74 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    timeout-minutes: 120
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install deps
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Set PYTHONPATH
         run: echo "PYTHONPATH=$GITHUB_WORKSPACE" >> $GITHUB_ENV
-        
+
       - name: Export secrets
         env:
           RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
         run: echo "RAPIDAPI_KEY=$RAPIDAPI_KEY" >> $GITHUB_ENV
 
-      # 1) Backfill historique (premier run: lance le manuellement avec HISTORY_DAYS=365)
-      - name: Reset DB (schéma propre)
-        run: rm -f data/football.db
-      
-      - name: Backfill (historique récent par défaut 60j)
+      # ── Optionnel : décommente cette étape si tu veux repartir d'une DB propre ──
+      # - name: Reset DB (first run only)
+      #   run: rm -f data/football.db
+
+      - name: Show leagues source
+        run: |
+          echo "→ config/leagues.py present?"; test -f config/leagues.py && head -n 5 config/leagues.py || echo "no"
+
+      # 1) Backfill historique (mets 3 au début pour tester, puis 60 ou 365)
+      - name: Backfill history (verbose)
         env:
-        HISTORY_DAYS: 60
-        PYTHONUNBUFFERED: '1'   # ← force les prints immédiats
-        run: python -u scripts/backfill_history.py 
+          HISTORY_DAYS: 60
+          PYTHONUNBUFFERED: '1'
+        run: python -u scripts/backfill_history.py
 
       # 2) Construire l'ELO historique
       - name: Build ELO history
-        run: python scripts/build_elo_history.py
+        env:
+          PYTHONUNBUFFERED: '1'
+        run: python -u scripts/build_elo_history.py
 
-      # 3) Ingestion du jour (pour rafraîchir les fixtures/cotes d'aujourd'hui)
+      # 3) Ingestion du jour (rafraîchir fixtures/cotes d'aujourd'hui)
       - name: Update today data
-        run: python scripts/update_data.py
+        env:
+          PYTHONUNBUFFERED: '1'
+        run: python -u scripts/update_data.py
 
-      # 4) Stats méthode codes (Bet365 / Pinnacle) pour aujourd'hui
+      # 4) Stats "codes" (Bet365 / Pinnacle) pour aujourd'hui
       - name: Compute odds-method stats
-        run: python scripts/odds_method_stats.py
+        env:
+          PYTHONUNBUFFERED: '1'
+        run: python -u scripts/odds_method_stats.py
 
       # 5) Générer prédictions (ELO / B365 / PIN / COMBINED)
-        # -> inclut 1X2, Over/Under 2.5, BTTS, + EV/Kelly
       - name: Generate predictions
-        run: python scripts/generate_predictions.py
+        env:
+          PYTHONUNBUFFERED: '1'
+        run: python -u scripts/generate_predictions.py
 
-      # 6) Commit DB
+      # 6) Commit and push DB
       - name: Commit and push DB
         run: |
           git config user.name "GitHub Action"
           git config user.email "actions@github.com"
           git add data/football.db
           git diff --cached --quiet || git commit -m "Auto-update football.db (hist + preds)"
-          git push
+          git push 
