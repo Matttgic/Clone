@@ -1,3 +1,4 @@
+# src/models/database.py
 import sqlite3
 import os
 
@@ -12,8 +13,13 @@ class Database:
     def _get_connection(self):
         return sqlite3.connect(self.path)
 
+    # ✅ Méthode publique attendue par tes scripts (build_elo_history, etc.)
+    def get_connection(self):
+        return self._get_connection()
+
     def _init_db(self):
         """Initialise la base et crée les tables si elles n'existent pas."""
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
         conn = self._get_connection()
         cursor = conn.cursor()
 
