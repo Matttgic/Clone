@@ -1,8 +1,12 @@
-# src/models/database.py
 import sqlite3
 import os
+import zlib
 
 DB_PATH = os.path.join("data", "football.db")
+
+
+def _crc32_int(s: str) -> int:
+    return zlib.crc32(s.encode("utf-8")) & 0xFFFFFFFF
 
 
 class Database:
@@ -17,12 +21,12 @@ class Database:
         return self._get_connection()
 
     def _init_db(self):
-        """Initialise la base et crée les tables si elles n'existent pas."""
+        """Initialise la base et crée/upgrade le schéma si nécessaire."""
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         conn = self._get_connection()
         cur = conn.cursor()
 
-        # 1) Matches de base (ingestion football-data)
+        # 1) Table matches (ingestion football-data)
         cur.execute("""
         CREATE TABLE IF NOT EXISTS matches (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,12 +45,34 @@ class Database:
             odds_away REAL
         );
         """)
+
+        # 1.b) Ajout colonne fixture_id si absente
+        cur.execute("PRAGMA table_info(matches);")
+        cols = {row[1] for row in cur.fetchall()}
+        if "fixture_id" not in cols:
+            cur.execute("ALTER TABLE matches ADD COLUMN fixture_id INTEGER;")
+            # Index + contrainte d'unicité (de manière sûre)
+            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_matches_fixture ON matches(fixture_id);")
+            conn.commit()
+            # Backfill des fixture_id pour les lignes existantes
+            cur.execute("SELECT id, date, league_code, home, away FROM matches WHERE fixture_id IS NULL;")
+            rows = cur.fetchall()
+            for mid, date, lg, home, away in rows:
+                base = f"{date or ''}|{lg or ''}|{home or ''}|{away or ''}"
+                fxid = _crc32_int(base)
+                cur.execute("UPDATE matches SET fixture_id=? WHERE id=?;", (fxid, mid))
+            conn.commit()
+        else:
+            # S'assurer de l'index/unique si la colonne existe déjà
+            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_matches_fixture ON matches(fixture_id);")
+
+        # Index utiles
         cur.execute("CREATE INDEX IF NOT EXISTS idx_matches_date   ON matches(date);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_matches_league ON matches(league_code);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_matches_home   ON matches(home);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_matches_away   ON matches(away);")
 
-        # 2) Table ELO par équipe (état courant)
+        # 2) Table ELO courant
         cur.execute("""
         CREATE TABLE IF NOT EXISTS team_elo (
             season TEXT,
@@ -59,7 +85,7 @@ class Database:
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_team_elo_rating ON team_elo(rating);")
 
-        # 3) Détails ELO par match (attendu par build_elo_history.py)
+        # 3) Détails ELO par match
         cur.execute("""
         CREATE TABLE IF NOT EXISTS match_elo (
             match_id INTEGER PRIMARY KEY,      -- référence matches.id
@@ -87,15 +113,34 @@ class Database:
     def insert_match(self, season, league_code, home, away, fthg, ftag, result,
                      btts_yes=None, btts_no=None,
                      odds_home=None, odds_draw=None, odds_away=None, date=None):
-        """Insère un match (ligne football-data)."""
+        """Insère un match (ligne football-data) avec fixture_id stable."""
+        # fixture_id déterministe basé sur (date|league|home|away)
+        base = f"{date or ''}|{league_code or ''}|{home or ''}|{away or ''}"
+        fixture_id = _crc32_int(base)
+
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute("""
         INSERT INTO matches (season, league_code, date, home, away, fthg, ftag, result,
-                             btts_yes, btts_no, odds_home, odds_draw, odds_away)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                             btts_yes, btts_no, odds_home, odds_draw, odds_away, fixture_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(fixture_id) DO UPDATE SET
+            season=excluded.season,
+            league_code=excluded.league_code,
+            date=COALESCE(excluded.date, matches.date),
+            home=excluded.home,
+            away=excluded.away,
+            fthg=COALESCE(excluded.fthg, matches.fthg),
+            ftag=COALESCE(excluded.ftag, matches.ftag),
+            result=COALESCE(excluded.result, matches.result),
+            btts_yes=COALESCE(excluded.btts_yes, matches.btts_yes),
+            btts_no=COALESCE(excluded.btts_no, matches.btts_no),
+            odds_home=COALESCE(excluded.odds_home, matches.odds_home),
+            odds_draw=COALESCE(excluded.odds_draw, matches.odds_draw),
+            odds_away=COALESCE(excluded.odds_away, matches.odds_away)
+        ;
         """, (season, league_code, date, home, away, fthg, ftag, result,
-              btts_yes, btts_no, odds_home, odds_draw, odds_away))
+              btts_yes, btts_no, odds_home, odds_draw, odds_away, fixture_id))
         conn.commit()
         conn.close()
 
