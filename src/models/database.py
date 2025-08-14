@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import sqlite3
 from contextlib import contextmanager
-from typing import Optional, Dict, Any
+from typing import Optional, Dict
 
 DB_PATH = os.getenv("DB_PATH", "data/football.db")
 
@@ -24,53 +24,43 @@ class Database:
         finally:
             conn.close()
 
-    # alias public (certains scripts l’utilisent)
+    # alias public (utilisé par d’autres scripts)
     def get_connection(self):
         return self._get_connection()
 
     # ---------- Init & migrations légères ----------
     def _init_db(self):
         with self._get_connection() as conn:
-            # Table des matches (schéma cible utilisé par fetch_today.py)
+            # Étape 1 : garantir l’existence de la table (même vide)
             conn.execute("""
             CREATE TABLE IF NOT EXISTS matches (
-              id           INTEGER PRIMARY KEY AUTOINCREMENT,
-              fixture_id   TEXT UNIQUE,      -- ID API-Football (unique)
-              date         TEXT,             -- ISO (ex: 2025-08-14T19:00:00Z)
-              league       TEXT,             -- nom de ligue (API-Football) ou code
-              season       TEXT,             -- ex: 2024, 2024-2025 (string)
-              home_team    TEXT,
-              away_team    TEXT,
-              home_score   INTEGER,
-              away_score   INTEGER,
-              result       TEXT,             -- 'H','D','A' (dérivé si scores connus)
-              status       TEXT,             -- ex: 'NS','FT', ...
-              created_at   TEXT DEFAULT (datetime('now')),
-              updated_at   TEXT DEFAULT (datetime('now'))
+              id INTEGER PRIMARY KEY AUTOINCREMENT
             )
             """)
-            # Index utiles
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_matches_date ON matches(date)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_matches_teams ON matches(home_team, away_team)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_matches_league ON matches(league)")
 
-            # Ajout de colonnes manquantes (DB plus ancienne)
+            # Étape 2 : ajouter les colonnes manquantes AVANT de créer les index
             self._ensure_columns(conn, "matches", {
-                "fixture_id": "TEXT",
-                "date": "TEXT",
-                "league": "TEXT",
-                "season": "TEXT",
+                "fixture_id": "TEXT",   # ID API-Football (unique si présent)
+                "date": "TEXT",         # ex: 2025-08-14T19:00:00Z
+                "league": "TEXT",       # nom/code de ligue
+                "season": "TEXT",       # ex: 2024 ou 2024-2025 (string)
                 "home_team": "TEXT",
                 "away_team": "TEXT",
                 "home_score": "INTEGER",
                 "away_score": "INTEGER",
-                "result": "TEXT",
-                "status": "TEXT",
+                "result": "TEXT",       # 'H','D','A'
+                "status": "TEXT",       # 'NS','FT', ...
                 "created_at": "TEXT",
-                "updated_at": "TEXT",
+                "updated_at": "TEXT"
             })
 
-            # ELO par équipe
+            # Étape 3 : index (maintenant que les colonnes existent)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_matches_date   ON matches(date)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_matches_teams  ON matches(home_team, away_team)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_matches_league ON matches(league)")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_matches_fixture ON matches(fixture_id)")
+
+            # Table ELO par équipe
             conn.execute("""
             CREATE TABLE IF NOT EXISTS team_stats (
               team_id    TEXT PRIMARY KEY,
@@ -79,7 +69,7 @@ class Database:
             )
             """)
 
-            # Historique ELO par match (si tu enregistres les détails)
+            # Historique ELO par match (si utilisé)
             conn.execute("""
             CREATE TABLE IF NOT EXISTS match_elo (
               id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -99,7 +89,7 @@ class Database:
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_match_elo_date ON match_elo(date)")
 
-            # Table des prédictions
+            # Table prédictions
             conn.execute("""
             CREATE TABLE IF NOT EXISTS predictions (
               id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -116,10 +106,10 @@ class Database:
               created_at   TEXT DEFAULT (datetime('now'))
             )
             """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_predictions_date ON predictions(date)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_predictions_date   ON predictions(date)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_predictions_method ON predictions(method)")
 
-            # Cotes par fixture/bookmaker
+            # Table des cotes (upsert par fixture+bookmaker)
             conn.execute("""
             CREATE TABLE IF NOT EXISTS odds (
               fixture_id     TEXT NOT NULL,
@@ -141,7 +131,6 @@ class Database:
             conn.commit()
 
     def _ensure_columns(self, conn: sqlite3.Connection, table: str, wanted: Dict[str, str]):
-        """Ajoute les colonnes manquantes pour rendre la table compatible."""
         cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
         added = False
         for col, typ in wanted.items():
@@ -166,7 +155,6 @@ class Database:
             )
             conn.commit()
 
-    # ---------- Upserts ----------
     @staticmethod
     def _derive_result(home_score: Optional[int], away_score: Optional[int]) -> Optional[str]:
         if home_score is None or away_score is None:
@@ -177,6 +165,7 @@ class Database:
             return "A"
         return "D"
 
+    # ---------- Upserts ----------
     def insert_match(
         self,
         fixture_id: Optional[str],
@@ -190,20 +179,23 @@ class Database:
         status: Optional[str] = None,
         result: Optional[str] = None,
     ):
-        """Upsert par fixture_id si présent, sinon par clé naturelle (date+teams+league)."""
+        """Upsert par fixture_id (unique) si fourni, sinon par clé naturelle (date+league+teams)."""
         # Seed ELO des équipes
         self._ensure_team_seed(home_team)
         self._ensure_team_seed(away_team)
 
-        # Déduire result si non fourni et scores connus
+        # Déduire résultat si non fourni
         if result is None:
             result = self._derive_result(home_score, away_score)
 
+        # Normalisation légère
+        f_id = None if fixture_id is None else str(fixture_id).strip()
+
         with self._get_connection() as conn:
-            if fixture_id:  # upsert par fixture_id (unique)
+            if f_id:
                 row = conn.execute(
                     "SELECT id FROM matches WHERE fixture_id = ?",
-                    (str(fixture_id).strip(),),
+                    (f_id,),
                 ).fetchone()
 
                 if row:
@@ -225,7 +217,7 @@ class Database:
                         home_team, away_team,
                         home_score, away_score,
                         result, status,
-                        str(fixture_id).strip(),
+                        f_id
                     ))
                 else:
                     conn.execute("""
@@ -236,12 +228,12 @@ class Database:
                           created_at, updated_at
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
                     """, (
-                        str(fixture_id).strip(), date, league, season,
+                        f_id, date, league, season,
                         home_team, away_team,
                         home_score, away_score, result, status
                     ))
             else:
-                # Fallback : clé naturelle
+                # Fallback si pas de fixture_id : clé naturelle
                 row = conn.execute("""
                     SELECT id FROM matches
                      WHERE date = ? AND league = ? AND home_team = ? AND away_team = ?
@@ -272,6 +264,7 @@ class Database:
                         home_team, away_team,
                         home_score, away_score, result, status
                     ))
+
             conn.commit()
 
     def upsert_odds(
