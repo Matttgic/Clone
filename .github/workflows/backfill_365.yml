@@ -1,0 +1,53 @@
+name: One-shot Backfill 365d
+
+on:
+  workflow_dispatch:
+
+jobs:
+  backfill-365:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    timeout-minutes: 360
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          echo "PYTHONPATH=$GITHUB_WORKSPACE" >> $GITHUB_ENV
+          echo "PYTHONUNBUFFERED=1" >> $GITHUB_ENV
+      - env:
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+        run: echo "RAPIDAPI_KEY=$RAPIDAPI_KEY" >> $GITHUB_ENV
+
+      - name: Reset DB (fresh)
+        run: |
+          rm -f data/football.db
+          mkdir -p data
+
+      - name: Backfill 365 days (verbose)
+        env:
+          HISTORY_DAYS: 365
+        run: python -u scripts/backfill_history.py
+
+      - name: Build ELO history
+        run: python -u scripts/build_elo_history.py
+
+      - name: Compute odds-method stats (today)
+        run: python -u scripts/odds_method_stats.py
+
+      - name: Generate predictions (today)
+        run: python -u scripts/generate_predictions.py
+
+      - name: Commit and push DB
+        run: |
+          git config user.name "GitHub Action"
+          git config user.email "actions@github.com"
+          git add data/football.db
+          git diff --cached --quiet || git commit -m "One-shot backfill 365d"
+          git push
