@@ -1,3 +1,4 @@
+# scripts/fetch_today.py
 import os
 import json
 import time
@@ -5,7 +6,7 @@ import requests
 from datetime import datetime, timezone
 from typing import Optional, Tuple
 
-from src.models.database import db  # on réutilise insert_match()
+from src.models.database import db  # on réutilise tes helpers DB (insert_match, etc.)
 
 API_HOST = "api-football-v1.p.rapidapi.com"
 API_BASE = f"https://{API_HOST}/v3"
@@ -127,39 +128,52 @@ def pick_ou25_from_book(book: dict) -> Tuple[Optional[float], Optional[float]]:
     return None, None
 
 
+def pick_bookmaker_meta(book) -> tuple[Optional[int], Optional[str]]:
+    # gère les 2 structures possibles de l'API
+    if isinstance(book, dict):
+        if "bookmaker" in book and isinstance(book["bookmaker"], dict):
+            return book["bookmaker"].get("id"), book["bookmaker"].get("name")
+        if "bookmakers" in book and book["bookmakers"]:
+            first = book["bookmakers"][0]
+            return first.get("id"), first.get("name")
+    return None, None
+
+
 def fetch_odds(fixture_id: int):
-    """Essaie de récupérer les cotes pour un fixture. Renvoie dict minimal."""
+    """Essaie de récupérer les cotes pour un fixture. Renvoie dict minimal ou None."""
     try:
         data = req("/odds", {"fixture": fixture_id})
     except Exception:
-        return {}
+        return None
 
     books = data.get("response", [])
     if not books:
-        return {}
+        return None
 
     # prioriser Pinnacle puis Bet365
     chosen = None
     for b in books:
-        name = b.get("bookmaker", {}).get("name") or b.get("bookmakers", [{}])[0].get("name")
+        name = (b.get("bookmaker", {}) or {}).get("name") or (b.get("bookmakers", [{}])[0].get("name") if b.get("bookmakers") else None)
         if name in PRIORITY_BOOKS:
             chosen = b
             break
     if chosen is None:
         chosen = books[0]
 
-    # La structure varie selon l'API : essayons "bookmakers"[0] si présent
+    # normaliser structure
     book = chosen
-    if "bookmakers" in chosen:
-        arr = chosen["bookmakers"]
-        if arr:
-            book = arr[0]
+    if "bookmakers" in chosen and chosen["bookmakers"]:
+        book = chosen["bookmakers"][0]
 
+    # extraire cotes
     odds_home, odds_draw, odds_away = pick_1x2_from_book(book)
     btts_yes, btts_no = pick_btts_from_book(book)
     ou_over25, ou_under25 = pick_ou25_from_book(book)
 
+    bookmaker_id, bookmaker_name = pick_bookmaker_meta(chosen)
     return {
+        "bookmaker_id": bookmaker_id,
+        "bookmaker_name": bookmaker_name,
         "odds_home": odds_home,
         "odds_draw": odds_draw,
         "odds_away": odds_away,
@@ -207,16 +221,15 @@ def main():
         ftag = int(goals.get("away")) if goals.get("away") is not None else None
         result = api_result_to_FTR(fthg, ftag) if is_finished else None
 
-        # Tenter de récupérer quelques cotes (si dispo)
+        # Tenter de récupérer des cotes
         odds = fetch_odds(fixture_id)
-        oh = odds.get("odds_home")
-        od = odds.get("odds_draw")
-        oa = odds.get("odds_away")
-        by = odds.get("btts_yes")
-        bn = odds.get("btts_no")
-        # (OU 2.5 dispo mais non stocké directement par insert_match — à étendre si besoin)
+        oh = odds.get("odds_home") if odds else None
+        od = odds.get("odds_draw") if odds else None
+        oa = odds.get("odds_away") if odds else None
+        by = odds.get("btts_yes") if odds else None
+        bn = odds.get("btts_no") if odds else None
 
-        # Upsert via notre helper DB (génère les IDs, fixture_id hash fallback si besoin, etc.)
+        # Upsert du match via helper DB
         db.insert_match(
             season=season,
             league_code=league_code,
@@ -231,10 +244,26 @@ def main():
             odds_draw=od,
             odds_away=oa,
             date=date_str,
+            fixture_id=fixture_id,  # si ton insert_match l'accepte, sinon retire ce param
         )
         saved += 1
         if is_finished:
             finished_updates += 1
+
+        # Upsert des cotes dans la table `odds` (pour generate_predictions.py)
+        if odds:
+            db.upsert_odds(
+                fixture_id=fixture_id,
+                bookmaker_id=odds.get("bookmaker_id"),
+                bookmaker_name=odds.get("bookmaker_name"),
+                home_odd=oh,
+                draw_odd=od,
+                away_odd=oa,
+                btts_yes=by,
+                btts_no=bn,
+                ou_over25=odds.get("ou_over25"),
+                ou_under25=odds.get("ou_under25"),
+            )
 
     print(f"✅ Insertion/MAJ terminée. Matches upsert: {saved} | terminés MAJ: {finished_updates}")
 
