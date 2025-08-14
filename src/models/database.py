@@ -1,4 +1,3 @@
-# src/models/database.py
 import sqlite3
 import os
 import zlib
@@ -22,12 +21,12 @@ class Database:
         return self._get_connection()
 
     def _init_db(self):
-        """Initialise/upgrade le schéma pour ingestion + ELO."""
+        """Initialise/upgrade le schéma pour ingestion + ELO (compat scripts existants)."""
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         conn = self._get_connection()
         cur = conn.cursor()
 
-        # --- Teams (IDs stables par nom) ---
+        # --- Teams ---
         cur.execute("""
         CREATE TABLE IF NOT EXISTS teams (
             team_id INTEGER PRIMARY KEY,
@@ -35,7 +34,7 @@ class Database:
         );
         """)
 
-        # --- Matches (ingestion football-data) ---
+        # --- Matches (avec colonnes compatibles API-football-like) ---
         cur.execute("""
         CREATE TABLE IF NOT EXISTS matches (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,7 +52,6 @@ class Database:
             odds_draw REAL,
             odds_away REAL,
             fixture_id INTEGER,
-            -- Champs "API-football-like" pour ELO:
             home_team_id INTEGER,
             away_team_id INTEGER,
             goals_home INTEGER,
@@ -62,7 +60,7 @@ class Database:
         );
         """)
 
-        # Index/contraintes utiles
+        # Index/contraintes matches
         cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_matches_fixture ON matches(fixture_id);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_matches_date    ON matches(date);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_matches_league  ON matches(league_code);")
@@ -70,7 +68,7 @@ class Database:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_matches_away    ON matches(away);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_matches_lgid    ON matches(league_id);")
 
-        # --- ELO (état courant par équipe/ligue/saison) ---
+        # --- ELO état courant ---
         cur.execute("""
         CREATE TABLE IF NOT EXISTS team_elo (
             season TEXT,
@@ -83,29 +81,48 @@ class Database:
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_team_elo_rating ON team_elo(rating);")
 
-        # --- ELO par match ---
+        # --- ELO par match (création initiale minimaliste) ---
         cur.execute("""
         CREATE TABLE IF NOT EXISTS match_elo (
-            match_id INTEGER PRIMARY KEY,      -- référence matches.id
+            match_id INTEGER,                   -- ancienne compat: id de matches
             season TEXT,
             league_code TEXT,
             date TEXT,
             home TEXT,
             away TEXT,
-            pre_home REAL,
+            pre_home REAL,                      -- anciens noms
             pre_away REAL,
             post_home REAL,
             post_away REAL,
             k_factor REAL,
             prob_home REAL,
             prob_draw REAL,
-            prob_away REAL,
-            FOREIGN KEY(match_id) REFERENCES matches(id)
+            prob_away REAL
         );
         """)
+
+        # 🔧 UPGRADE match_elo pour supporter les noms attendus par build_elo_history.py
+        cur.execute("PRAGMA table_info(match_elo);")
+        me_cols = {row[1] for row in cur.fetchall()}
+
+        # Colonnes “nouvelles” attendues par build_elo_history.py
+        to_add = []
+        if "fixture_id" not in me_cols:      to_add.append(("fixture_id", "INTEGER"))
+        if "home_pre_elo" not in me_cols:    to_add.append(("home_pre_elo", "REAL"))
+        if "away_pre_elo" not in me_cols:    to_add.append(("away_pre_elo", "REAL"))
+        if "home_post_elo" not in me_cols:   to_add.append(("home_post_elo", "REAL"))
+        if "away_post_elo" not in me_cols:   to_add.append(("away_post_elo", "REAL"))
+        if "k" not in me_cols:               to_add.append(("k", "REAL"))
+        # Prob cols existent déjà sous prob_home/draw/away (on garde ces noms aussi)
+
+        for col, typ in to_add:
+            cur.execute(f"ALTER TABLE match_elo ADD COLUMN {col} {typ};")
+
+        # Index utiles sur match_elo
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_match_elo_fixture ON match_elo(fixture_id);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_match_elo_league_date ON match_elo(league_code, date);")
 
-        # --- Table attendue par elo_system.py (sélectionne elo depuis team_stats) ---
+        # --- Table team_stats utilisée par elo_system.py (get_team_elo) ---
         cur.execute("""
         CREATE TABLE IF NOT EXISTS team_stats (
             team_id INTEGER PRIMARY KEY,
@@ -120,7 +137,7 @@ class Database:
 
         conn.commit()
 
-        # --- Backfill des colonnes calculées si des lignes existent déjà ---
+        # --- Backfill des champs calculés de matches si nécessaire ---
         cur.execute("""
             SELECT id, league_code, home, away, fthg, ftag, date, home_team_id, away_team_id, league_id, fixture_id
             FROM matches
@@ -134,7 +151,6 @@ class Database:
             goals_home = fthg
             goals_away = ftag
 
-            # upsert teams
             if home:
                 cur.execute("INSERT OR IGNORE INTO teams(team_id, name) VALUES (?, ?);", (new_home_id, home))
             if away:
@@ -142,16 +158,11 @@ class Database:
 
             cur.execute("""
                 UPDATE matches
-                SET home_team_id = ?,
-                    away_team_id = ?,
-                    goals_home   = ?,
-                    goals_away   = ?,
-                    league_id    = ?,
-                    fixture_id   = ?
-                WHERE id = ?;
+                SET home_team_id=?, away_team_id=?, goals_home=?, goals_away=?, league_id=?, fixture_id=?
+                WHERE id=?;
             """, (new_home_id, new_away_id, goals_home, goals_away, new_league_id, new_fixture_id, mid))
 
-            # seed minimal team_stats (si absent) pour éviter SELECT vide
+            # seed team_stats si absent
             cur.execute("INSERT OR IGNORE INTO team_stats(team_id, elo, league_id, season, last_match_date) VALUES (?, 1500, ?, ?, NULL);",
                         (new_home_id, new_league_id, None))
             cur.execute("INSERT OR IGNORE INTO team_stats(team_id, elo, league_id, season, last_match_date) VALUES (?, 1500, ?, ?, NULL);",
@@ -163,7 +174,7 @@ class Database:
     def insert_match(self, season, league_code, home, away, fthg, ftag, result,
                      btts_yes=None, btts_no=None,
                      odds_home=None, odds_draw=None, odds_away=None, date=None):
-        """Insère un match avec colonnes compatibles ELO + fixture_id stable."""
+        """Insère/upsert un match avec IDs et fixture_id stables."""
         home_id = _crc32_int(f"team|{home}")
         away_id = _crc32_int(f"team|{away}")
         league_id = _crc32_int(f"league|{league_code}")
@@ -210,7 +221,7 @@ class Database:
               fthg, ftag, fthg, ftag, result,
               btts_yes, btts_no, odds_home, odds_draw, odds_away, fixture_id))
 
-        # seed minimal team_stats pour ces équipes (si pas encore présentes)
+        # seed team_stats
         cur.execute("INSERT OR IGNORE INTO team_stats(team_id, elo, league_id, season, last_match_date) VALUES (?, 1500, ?, ?, NULL);",
                     (home_id, league_id, season))
         cur.execute("INSERT OR IGNORE INTO team_stats(team_id, elo, league_id, season, last_match_date) VALUES (?, 1500, ?, ?, NULL);",
