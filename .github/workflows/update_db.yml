@@ -32,6 +32,9 @@ jobs:
         run: echo "RAPIDAPI_KEY=$RAPIDAPI_KEY" >> $GITHUB_ENV
 
       # 1) Backfill historique (premier run: lance le manuellement avec HISTORY_DAYS=365)
+      - name: Reset DB (schéma propre)
+        run: rm -f data/football.db
+      
       - name: Backfill (historique récent par défaut 60j)
         env:
           HISTORY_DAYS: 60
