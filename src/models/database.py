@@ -1,134 +1,93 @@
+# src/models/database.py
+import os
 import sqlite3
 from contextlib import contextmanager
+from typing import Iterator
 from config.settings import Settings
-import os
+
+DB_PATH = Settings.DB.DB_PATH
 
 class Database:
-    def __init__(self):
-        self.db_path = Settings.DB.DB_PATH
-        self._ensure_db_directory()
-        self._init_database()
-    
-    def _ensure_db_directory(self):
-        """Crée le répertoire data s'il n'existe pas"""
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-    
+    def __init__(self, path: str):
+        self.path = path
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        self._init_db()
+
     @contextmanager
-    def get_connection(self):
-        """Context manager pour les connexions à la base"""
-        conn = sqlite3.connect(self.db_path)
+    def get_connection(self) -> Iterator[sqlite3.Connection]:
+        conn = sqlite3.connect(self.path, timeout=30, isolation_level=None)
         conn.row_factory = sqlite3.Row
         try:
             yield conn
         finally:
             conn.close()
-    
-    def _init_database(self):
-        """Initialise les tables de la base de données"""
-        with self.get_connection() as conn:
-            # Table des équipes avec Elo
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS teams (
-                    id INTEGER PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    logo TEXT,
-                    league_id INTEGER,
-                    elo_rating REAL DEFAULT 1500,
-                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            # Table des matchs
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS matches (
-                    id INTEGER PRIMARY KEY,
-                    fixture_id INTEGER UNIQUE,
-                    home_team_id INTEGER,
-                    away_team_id INTEGER,
-                    league_id INTEGER,
-                    match_date TIMESTAMP,
-                    status TEXT,
-                    home_score INTEGER,
-                    away_score INTEGER,
-                    home_elo_before REAL,
-                    away_elo_before REAL,
-                    home_elo_after REAL,
-                    away_elo_after REAL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (home_team_id) REFERENCES teams (id),
-                    FOREIGN KEY (away_team_id) REFERENCES teams (id)
-                )
-            ''')
-            
-            # Table des côtes
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS odds (
-                    id INTEGER PRIMARY KEY,
-                    fixture_id INTEGER,
-                    bookmaker_id INTEGER,
-                    bookmaker_name TEXT,
-                    home_odd REAL,
-                    draw_odd REAL,
-                    away_odd REAL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (fixture_id) REFERENCES matches (fixture_id)
-                )
-            ''')
-            
-            # Table des statistiques des équipes
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS team_stats (
-                    id INTEGER PRIMARY KEY,
-                    team_id INTEGER,
-                    league_id INTEGER,
-                    season INTEGER,
-                    matches_played INTEGER,
-                    wins INTEGER,
-                    draws INTEGER,
-                    losses INTEGER,
-                    goals_for INTEGER,
-                    goals_against INTEGER,
-                    clean_sheets INTEGER,
-                    failed_to_score INTEGER,
-                    avg_goals_for REAL,
-                    avg_goals_against REAL,
-                    form_points REAL,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (team_id) REFERENCES teams (id)
-                )
-            ''')
-            
-            # Table des prédictions et paris
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS predictions (
-                    id INTEGER PRIMARY KEY,
-                    fixture_id INTEGER,
-                    prediction_type TEXT,
-                    predicted_outcome TEXT,
-                    confidence REAL,
-                    recommended_bet TEXT,
-                    stake REAL,
-                    potential_return REAL,
-                    actual_outcome TEXT,
-                    profit_loss REAL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (fixture_id) REFERENCES matches (fixture_id)
-                )
-            ''')
-            
-            # Table des clones détectés
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS clone_matches (
-                    id INTEGER PRIMARY KEY,
-                    fixture1_id INTEGER,
-                    fixture2_id INTEGER,
-                    similarity_score REAL,
-                    clone_factors TEXT,
-                    detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            conn.commit()
 
-# Instance globale
-db = Database()
+    def _init_db(self):
+        with self.get_connection() as conn:
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA foreign_keys=ON;")
+            # Teams
+            conn.execute("""
+            CREATE TABLE IF NOT EXISTS teams (
+                team_id INTEGER PRIMARY KEY,
+                name TEXT,
+                league_id INTEGER
+            );""")
+            # Matches
+            conn.execute("""
+            CREATE TABLE IF NOT EXISTS matches (
+                fixture_id INTEGER PRIMARY KEY,
+                league_id INTEGER,
+                date TEXT,                     -- ISO 8601
+                home_team_id INTEGER,
+                away_team_id INTEGER
+            );""")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_matches_date ON matches(date);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_matches_league ON matches(league_id);")
+            # Odds
+            conn.execute("""
+            CREATE TABLE IF NOT EXISTS odds (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fixture_id INTEGER NOT NULL,
+                bookmaker_id INTEGER NOT NULL,
+                bookmaker_name TEXT,
+                home_odd REAL,
+                draw_odd REAL,
+                away_odd REAL,
+                UNIQUE(fixture_id, bookmaker_id) ON CONFLICT REPLACE
+            );""")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_odds_fixture ON odds(fixture_id);")
+            # Team stats (ELO)
+            conn.execute("""
+            CREATE TABLE IF NOT EXISTS team_stats (
+                team_id INTEGER PRIMARY KEY,
+                elo REAL
+            );""")
+            # Predictions / value bets
+            conn.execute("""
+            CREATE TABLE IF NOT EXISTS predictions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fixture_id INTEGER NOT NULL,
+                selection TEXT CHECK(selection IN ('HOME','DRAW','AWAY')),
+                prob REAL,
+                odd REAL,
+                ev REAL,             -- expected value: prob * odd
+                kelly REAL,          -- fraction Kelly
+                confidence REAL,
+                created_at TEXT DEFAULT (datetime('now'))
+            );""")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_pred_fixture ON predictions(fixture_id);")
+            # Clone matches
+            conn.execute("""
+            CREATE TABLE IF NOT EXISTS clone_matches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fixture1_id INTEGER NOT NULL,
+                fixture2_id INTEGER NOT NULL,
+                similarity_score REAL,
+                clone_factors TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            );""")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_clone_f1 ON clone_matches(fixture1_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_clone_f2 ON clone_matches(fixture2_id);")
+
+db = Database(DB_PATH)
