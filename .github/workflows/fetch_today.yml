@@ -1,0 +1,58 @@
+name: Daily Fixtures & Predictions
+
+on:
+  schedule:
+    - cron: "0 8 * * *"  # Tous les jours à 8h UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch_and_predict:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Set PYTHONPATH
+        run: echo "PYTHONPATH=$GITHUB_WORKSPACE" >> $GITHUB_ENV
+
+      - name: Fetch today's fixtures (API-Football)
+        env:
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+        run: python -u scripts/fetch_today.py
+
+      - name: Build ELO history (refresh after new results)
+        run: python -u scripts/build_elo_history.py
+
+      - name: Generate predictions (today)
+        run: python -u scripts/generate_predictions.py
+
+      - name: Export predictions (today + fallback)
+        run: |
+          mkdir -p predictions
+          python -u scripts/export_predictions.py --days 1
+
+      - name: Commit & Push updates
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+          git add -A
+          git commit -m "Daily fixtures & predictions update [skip ci]" || echo "No changes"
+          git push
