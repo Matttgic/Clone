@@ -1,4 +1,4 @@
-name: Football-Data Backfill 2024-2025
+name: FD Backfill 2024-2025
 
 on:
   workflow_dispatch:
@@ -8,13 +8,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
@@ -24,25 +24,30 @@ jobs:
       - name: Set PYTHONPATH
         run: echo "PYTHONPATH=$GITHUB_WORKSPACE" >> $GITHUB_ENV
 
-      - name: Reset DB (start fresh)
+      - name: Remove old DB
         run: rm -f data/football.db
 
-      - name: Ingest ALL CSVs for 2024-2025
+      - name: Ingest Football-Data
         run: python -u scripts/fd_ingest.py
 
-      - name: Build ELO ratings (full season)
+      - name: Build ELO history
         run: python -u scripts/build_elo_history.py
 
-      - name: Compute odds method stats
+      - name: Compute method stats
         run: python -u scripts/odds_method_stats.py
 
       - name: Generate predictions
         run: python -u scripts/generate_predictions.py
 
+      - name: Export predictions (last 7 days)
+        run: |
+          mkdir -p predictions
+          python -u scripts/export_predictions.py --days 7
+
       - name: Commit updated DB & predictions
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "actions@github.com"
-          git add data/football.db predictions/
+          git add -A
           git commit -m "Backfill 2024-2025 completed [skip ci]" || echo "No changes"
           git push
