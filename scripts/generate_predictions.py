@@ -1,137 +1,217 @@
 # scripts/generate_predictions.py
-from typing import Dict, Tuple
-from config.settings import Settings
-from src.models.database import db
-from src.services.elo_system import elo_system
-from src.services.odds_analyzer import odds_analyzer
+from __future__ import annotations
+import sqlite3
+from typing import Dict, List, Optional, Tuple
+from datetime import datetime
 
-MIN_VALUE = Settings.BETTING.MIN_VALUE
-B365 = Settings.BETTING.BET365_ID
-PIN = Settings.BETTING.PINNACLE_ID
+DB_PATH = "data/football.db"
 
-def ev(prob: float, odd: float) -> Tuple[float, float]:
-    if not odd or odd <= 1.0 or prob <= 0: return 0.0, 0.0
-    ev = prob * odd
-    kelly = odds_analyzer.kelly_value(prob, odd)
-    return ev, kelly
+HOME_ADV = 100.0  # avantage domicile en points ELO
+DEFAULT_ELO = 1500.0
 
-def combined_prob(*vals):
-    vals = [v for v in vals if v is not None]
-    return sum(vals)/len(vals) if vals else None
 
-def insert_pred(conn, fixture_id: int, market: str, selection: str, source: str, prob: float, odd: float):
-    e, k = ev(prob, odd)
-    conf = min(1.0, max(0.0, (e - 1.0) * 2))
-    conn.execute("""INSERT INTO predictions (fixture_id, market, selection, source_method, prob, odd, ev, kelly, confidence)
-                    VALUES (?,?,?,?,?,?,?,?,?)""",
-                 (fixture_id, market, selection, source, float(prob or 0), float(odd or 0), float(e), float(k), float(conf)))
+def get_conn() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-def odds_for_fixture(conn, fixture_id: int) -> Dict:
-    o1 = conn.execute("SELECT bookmaker_id, bookmaker_name, home_odd, draw_odd, away_odd FROM odds WHERE fixture_id=?", (fixture_id,)).fetchall()
-    ou = conn.execute("SELECT bookmaker_id, bookmaker_name, over25_odd, under25_odd FROM ou25_odds WHERE fixture_id=?", (fixture_id,)).fetchall()
-    bt = conn.execute("SELECT bookmaker_id, bookmaker_name, yes_odd, no_odd FROM btts_odds WHERE fixture_id=?", (fixture_id,)).fetchall()
-    by_bm = {}
-    for bm_id, bm_name, oh, od, oa in o1:
-        by_bm.setdefault(bm_id, {"name": bm_name})
-        by_bm[bm_id]["1x2"] = (oh, od, oa)
-    for bm_id, bm_name, over25, under25 in ou:
-        by_bm.setdefault(bm_id, {"name": bm_name})
-        by_bm[bm_id]["ou25"] = (over25, under25)
-    for bm_id, bm_name, yes, no in bt:
-        by_bm.setdefault(bm_id, {"name": bm_name})
-        by_bm[bm_id]["btts"] = (yes, no)
-    return by_bm
+
+def table_columns(conn: sqlite3.Connection, table: str) -> List[str]:
+    return [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+
+
+def today_str() -> str:
+    return datetime.utcnow().strftime("%Y-%m-%d")
+
+
+def get_today_fixtures(conn: sqlite3.Connection) -> List[Dict]:
+    """
+    Récupère les matchs du jour depuis `matches` en s'adaptant au schéma réel.
+    Retourne des dicts: {
+        fixture_id, date, league, home_team, away_team
+    } (certains champs peuvent être None si absents du schéma)
+    """
+    cols = set(table_columns(conn, "matches"))
+
+    # Déterminer les noms de colonnes présents
+    col_date = "date" if "date" in cols else None
+    col_fixture = "fixture_id" if "fixture_id" in cols else None
+    col_league = "league" if "league" in cols else ("league_id" if "league_id" in cols else None)
+
+    home_col = "home_team" if "home_team" in cols else ("home_team_id" if "home_team_id" in cols else None)
+    away_col = "away_team" if "away_team" in cols else ("away_team_id" if "away_team_id" in cols else None)
+
+    # Si pas d'infos d'équipes, pas possible
+    if home_col is None or away_col is None:
+        return []
+
+    select_cols = []
+    if col_fixture: select_cols.append(col_fixture)
+    if col_date:    select_cols.append(col_date)
+    if col_league:  select_cols.append(col_league)
+    select_cols += [home_col, away_col]
+
+    select_cols_sql = ", ".join(select_cols)
+
+    where = ""
+    params: List[str] = []
+    if col_date:
+        # Filtrer la date (prefix ISO)
+        where = "WHERE substr({d},1,10)=?".format(d=col_date)
+        params.append(today_str())
+
+    rows = conn.execute(f"SELECT {select_cols_sql} FROM matches {where}", params).fetchall()
+
+    fixtures: List[Dict] = []
+    for r in rows:
+        fixtures.append({
+            "fixture_id": r[col_fixture] if col_fixture else None,
+            "date":       r[col_date] if col_date else None,
+            "league":     r[col_league] if col_league else None,
+            "home_team":  str(r[home_col]) if r[home_col] is not None else None,
+            "away_team":  str(r[away_col]) if r[away_col] is not None else None,
+        })
+    return fixtures
+
+
+def get_team_elo(conn: sqlite3.Connection, team_id_or_name: Optional[str]) -> float:
+    if not team_id_or_name:
+        return DEFAULT_ELO
+    row = conn.execute(
+        "SELECT elo FROM team_stats WHERE team_id = ?",
+        (str(team_id_or_name).strip(),)
+    ).fetchone()
+    return float(row["elo"]) if row and row["elo"] is not None else DEFAULT_ELO
+
+
+def elo_probs(home_elo: float, away_elo: float) -> Tuple[float, float, float]:
+    """
+    Probabilités 1X2 basées sur ELO simple :
+      - calcule p_home_raw et p_away_raw (logistique sans nul),
+      - assigne un p_draw = 0.25 par défaut,
+      - renormalise pour que p_home+p_draw+p_away = 1.
+    """
+    import math
+    diff = (home_elo + HOME_ADV) - away_elo
+    # prob sans nul
+    p_home_raw = 1.0 / (1.0 + math.pow(10.0, (-diff / 400.0)))
+    p_away_raw = 1.0 - p_home_raw
+    p_draw = 0.25
+    scale = p_home_raw + p_away_raw
+    if scale <= 0:
+        return 0.375, 0.25, 0.375
+    p_home = p_home_raw * (0.75 / scale)
+    p_away = p_away_raw * (0.75 / scale)
+    return p_home, p_draw, p_away
+
+
+def best_1x2_odds_for_fixture(conn: sqlite3.Connection, fixture_id: Optional[str]) -> Optional[Dict]:
+    """
+    Récupère les meilleures cotes 1X2 pour un fixture_id depuis la table `odds`.
+    Retourne dict {home_odd, draw_odd, away_odd} ou None si pas de données.
+    """
+    if not fixture_id:
+        return None
+    rows = conn.execute("""
+        SELECT home_odd, draw_odd, away_odd
+        FROM odds
+        WHERE fixture_id = ?
+    """, (str(fixture_id).strip(),)).fetchall()
+    if not rows:
+        return None
+    # choisir la meilleure cote par sélection
+    best = {"home_odd": None, "draw_odd": None, "away_odd": None}
+    for r in rows:
+        h, d, a = r["home_odd"], r["draw_odd"], r["away_odd"]
+        if h is not None:
+            best["home_odd"] = max(best["home_odd"], h) if best["home_odd"] is not None else h
+        if d is not None:
+            best["draw_odd"] = max(best["draw_odd"], d) if best["draw_odd"] is not None else d
+        if a is not None:
+            best["away_odd"] = max(best["away_odd"], a) if best["away_odd"] is not None else a
+    return best
+
+
+def upsert_prediction(conn: sqlite3.Connection,
+                      fixture_id: Optional[str],
+                      date: Optional[str],
+                      league: Optional[str],
+                      home_team: Optional[str],
+                      away_team: Optional[str],
+                      method: str,
+                      market: str,
+                      selection: str,
+                      prob: Optional[float],
+                      odd: Optional[float],
+                      value: Optional[float]):
+    conn.execute("""
+        INSERT INTO predictions (
+          fixture_id, date, league, home_team, away_team,
+          method, market, selection, prob, odd, value, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    """, (
+        str(fixture_id).strip() if fixture_id else None,
+        date, league, home_team, away_team,
+        method, market, selection,
+        prob, odd, value
+    ))
+
 
 def main():
-    # Purge anciennes prédictions du jour
-    with db.get_connection() as conn:
-        conn.execute("DELETE FROM predictions WHERE substr(created_at,1,10)=substr(datetime('now'),1,10)")
+    conn = get_conn()
 
-    with db.get_connection() as conn:
-        rows = conn.execute("""
-            SELECT fixture_id, home_team_id, away_team_id FROM matches
-            WHERE substr(date,1,10)=substr(datetime('now'),1,10)
-            ORDER BY date ASC
-        """).fetchall()
+    # Nettoie les prédictions du jour
+    conn.execute("DELETE FROM predictions WHERE substr(date,1,10) = ?", (today_str(),))
 
-    for r in rows:
-        fid, home_id, away_id = r
-        # 1) ELO
-        p = elo_system.predict_match(home_id, away_id)
-        elo_1x2 = (p["home_win_prob"], p["draw_prob"], p["away_win_prob"])
+    fixtures = get_today_fixtures(conn)
+    if not fixtures:
+        print("[info] Aucun match du jour trouvé dans matches.")
+        conn.commit()
+        conn.close()
+        return
 
-        # 2) Cotes du jour
-        with db.get_connection() as conn:
-            bm_odds = odds_for_fixture(conn, fid)
-            # Stats historiques méthode codes
-            b365 = conn.execute("SELECT sample_size, home_win_pct, draw_pct, away_win_pct, over25_pct, btts_yes_pct FROM method_stats WHERE fixture_id=? AND method='B365'", (fid,)).fetchone()
-            pin  = conn.execute("SELECT sample_size, home_win_pct, draw_pct, away_win_pct, over25_pct, btts_yes_pct FROM method_stats WHERE fixture_id=? AND method='PINNACLE'", (fid,)).fetchone()
+    inserted = 0
+    for fx in fixtures:
+        home = fx["home_team"]
+        away = fx["away_team"]
+        if not home or not away:
+            continue
 
-        # 1X2 — Probabilités par méthodes
-        b365_1x2 = (b365[1], b365[2], b365[3]) if b365 else (None,None,None)
-        pin_1x2  = (pin[1], pin[2], pin[3]) if pin else (None,None,None)
-        comb_1x2 = tuple(combined_prob(a,b,c) for a,b,c in zip(elo_1x2, b365_1x2, pin_1x2))
+        # ELO
+        home_elo = get_team_elo(conn, home)
+        away_elo = get_team_elo(conn, away)
+        pH, pD, pA = elo_probs(home_elo, away_elo)
 
-        # OU2.5 — Probabilités
-        b365_ou = b365[4] if b365 else None
-        pin_ou  = pin[4]  if pin else None
-        comb_ou = combined_prob(None, b365_ou, pin_ou)  # l'ELO pur ne donne pas OU: on combine codes
-        # BTTS — Probabilités
-        b365_bt = b365[5] if b365 else None
-        pin_bt  = pin[5]  if pin else None
-        comb_bt = combined_prob(None, b365_bt, pin_bt)
+        # odds 1X2 (si fixture_id connu)
+        odds = best_1x2_odds_for_fixture(conn, fx.get("fixture_id"))
 
-        # Insérer les prédictions pour chaque méthode + COMBINED en regard des cotes disponibles
-        with db.get_connection() as conn:
-            odds_map = odds_for_fixture(conn, fid)
+        # valeurs
+        def val(prob: Optional[float], odd: Optional[float]) -> Optional[float]:
+            if prob is None or odd is None:
+                return None
+            return prob * odd - 1.0
 
-            # Helper: insère pour une méthode donnée
-            def insert_for_method(tag: str, probs_1x2, p_ou25, p_btts):
-                # Choix des cotes “du jour” : on prend la meilleure dispo (min overround approx)
-                best1x2 = None; best1x2_bm = None; best_overround = 9e9
-                for bm_id, d in odds_map.items():
-                    if "1x2" in d:
-                        oh,od,oa = d["1x2"]
-                        ph,pd,pa = odds_analyzer.normalize_overround(oh,od,oa)
-                        over = (1/oh if oh else 0)+(1/od if od else 0)+(1/oa if oa else 0)
-                        if over < best_overround:
-                            best_overround = over
-                            best1x2 = (oh,od,oa); best1x2_bm = bm_id
-                if probs_1x2 and best1x2:
-                    for sel, pr, od in zip(("HOME","DRAW","AWAY"), probs_1x2, best1x2):
-                        if pr is None or od is None: continue
-                        insert_pred(conn, fid, "1X2", sel, tag, pr, od)
+        h_odd = odds.get("home_odd") if odds else None
+        d_odd = odds.get("draw_odd") if odds else None
+        a_odd = odds.get("away_odd") if odds else None
 
-                # OU 2.5
-                best_ou = None
-                for bm_id, d in odds_map.items():
-                    if "ou25" in d:
-                        best_ou = d["ou25"]; break
-                if p_ou25 is not None and best_ou:
-                    over25, under25 = best_ou
-                    if over25: insert_pred(conn, fid, "OU25", "OVER25", tag, p_ou25, over25)
-                    if under25 and p_ou25 is not None:
-                        insert_pred(conn, fid, "OU25", "UNDER25", tag, 1.0-p_ou25, under25)
+        # Insère trois lignes (H/D/A) pour la méthode ELO sur le marché 1X2
+        upsert_prediction(conn, fx.get("fixture_id"), fx.get("date"), fx.get("league"), home, away,
+                          method="ELO", market="1X2", selection="H",
+                          prob=pH, odd=h_odd, value=val(pH, h_odd))
+        upsert_prediction(conn, fx.get("fixture_id"), fx.get("date"), fx.get("league"), home, away,
+                          method="ELO", market="1X2", selection="D",
+                          prob=pD, odd=d_odd, value=val(pD, d_odd))
+        upsert_prediction(conn, fx.get("fixture_id"), fx.get("date"), fx.get("league"), home, away,
+                          method="ELO", market="1X2", selection="A",
+                          prob=pA, odd=a_odd, value=val(pA, a_odd))
 
-                # BTTS
-                best_bt = None
-                for bm_id, d in odds_map.items():
-                    if "btts" in d:
-                        best_bt = d["btts"]; break
-                if p_btts is not None and best_bt:
-                    yes,no = best_bt
-                    if yes: insert_pred(conn, fid, "BTTS", "BTTS_YES", tag, p_btts, yes)
-                    if no and p_btts is not None:
-                        insert_pred(conn, fid, "BTTS", "BTTS_NO", tag, 1.0-p_btts, no)
+        inserted += 3
 
-            # Méthodes individuelles
-            insert_for_method("ELO", elo_1x2, None, None)
-            insert_for_method("B365", b365_1x2, b365_ou, b365_bt)
-            insert_for_method("PINNACLE", pin_1x2, pin_ou, pin_bt)
-            # Combinée
-            insert_for_method("COMBINED", comb_1x2, comb_ou, comb_bt)
-
-    print("✅ Prédictions générées (ELO / B365 / PINNACLE / COMBINED).")
+    conn.commit()
+    conn.close()
+    print(f"✅ Prédictions générées (ELO 1X2) : {inserted} lignes.")
 
 if __name__ == "__main__":
     main()
