@@ -2,7 +2,7 @@ name: Daily Fixtures & Predictions
 
 on:
   schedule:
-    - cron: "0 8 * * *"  # Tous les jours à 8h UTC
+    - cron: "0 8 * * *"  # Tous les jours à 08:00 UTC
   workflow_dispatch:
 
 permissions:
@@ -14,6 +14,7 @@ jobs:
 
     steps:
       - name: Checkout repo
+      # Récupère le code et autorise le push (commit DB + fichiers exportés)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -33,39 +34,37 @@ jobs:
       - name: Set PYTHONPATH
         run: echo "PYTHONPATH=$GITHUB_WORKSPACE" >> $GITHUB_ENV
 
-      # Migration schéma matches
+      # --- Migrations (idempotentes) ---
       - name: Ensure matches schema is complete
         run: python -u scripts/migrate_matches_schema.py
 
-      # Migration table odds
       - name: Create odds table if missing
         run: python -u scripts/migrate_add_odds.py
 
-      # Migration table team_stats
       - name: Migrate team_stats schema
         run: python -u scripts/migrate_team_stats_schema.py
 
-      # Récupération fixtures du jour
+      # --- Récupération fixtures du jour depuis API-Football ---
       - name: Fetch today's fixtures (API-Football)
         env:
           RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
         run: python -u scripts/fetch_today.py
 
-      # Reconstruction Elo après résultats
+      # --- Rebuild Elo (si résultats tombés) ---
       - name: Build ELO history (refresh after new results)
         run: python -u scripts/build_elo_history.py
 
-      # Génération des prédictions
+      # --- Génération des prédictions du jour ---
       - name: Generate predictions (today)
         run: python -u scripts/generate_predictions.py
 
-      # Export des prédictions
-      - name: Export predictions (today + fallback)
+      # --- Export des prédictions du jour ---
+      - name: Export predictions (today)
         run: |
           mkdir -p predictions
           python -u scripts/export_predictions.py --days 1
 
-      # Commit & Push updates
+      # --- Commit & Push des mises à jour ---
       - name: Commit & Push updates
         run: |
           git config --global user.name "github-actions"
