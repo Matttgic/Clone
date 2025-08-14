@@ -22,12 +22,12 @@ class Database:
         return self._get_connection()
 
     def _init_db(self):
-        """Initialise/upgrade le schéma pour être compatible avec build_elo_history.py."""
+        """Initialise/upgrade le schéma pour ingestion + ELO."""
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         conn = self._get_connection()
         cur = conn.cursor()
 
-        # --- Table teams (IDs stables basés sur le nom) ---
+        # --- Teams (IDs stables par nom) ---
         cur.execute("""
         CREATE TABLE IF NOT EXISTS teams (
             team_id INTEGER PRIMARY KEY,
@@ -35,7 +35,7 @@ class Database:
         );
         """)
 
-        # --- Table matches (ingestion football-data) ---
+        # --- Matches (ingestion football-data) ---
         cur.execute("""
         CREATE TABLE IF NOT EXISTS matches (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,25 +52,15 @@ class Database:
             odds_home REAL,
             odds_draw REAL,
             odds_away REAL,
-            fixture_id INTEGER
+            fixture_id INTEGER,
+            -- Champs "API-football-like" pour ELO:
+            home_team_id INTEGER,
+            away_team_id INTEGER,
+            goals_home INTEGER,
+            goals_away INTEGER,
+            league_id INTEGER
         );
         """)
-
-        # Colonnes attendues par build_elo_history.py
-        cur.execute("PRAGMA table_info(matches);")
-        cols = {row[1] for row in cur.fetchall()}
-
-        # Ajout home_team_id / away_team_id / goals_home / goals_away / league_id si absents
-        if "home_team_id" not in cols:
-            cur.execute("ALTER TABLE matches ADD COLUMN home_team_id INTEGER;")
-        if "away_team_id" not in cols:
-            cur.execute("ALTER TABLE matches ADD COLUMN away_team_id INTEGER;")
-        if "goals_home" not in cols:
-            cur.execute("ALTER TABLE matches ADD COLUMN goals_home INTEGER;")
-        if "goals_away" not in cols:
-            cur.execute("ALTER TABLE matches ADD COLUMN goals_away INTEGER;")
-        if "league_id" not in cols:
-            cur.execute("ALTER TABLE matches ADD COLUMN league_id INTEGER;")
 
         # Index/contraintes utiles
         cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_matches_fixture ON matches(fixture_id);")
@@ -80,7 +70,7 @@ class Database:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_matches_away    ON matches(away);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_matches_lgid    ON matches(league_id);")
 
-        # --- Tables Elo ---
+        # --- ELO (état courant par équipe/ligue/saison) ---
         cur.execute("""
         CREATE TABLE IF NOT EXISTS team_elo (
             season TEXT,
@@ -93,6 +83,7 @@ class Database:
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_team_elo_rating ON team_elo(rating);")
 
+        # --- ELO par match ---
         cur.execute("""
         CREATE TABLE IF NOT EXISTS match_elo (
             match_id INTEGER PRIMARY KEY,      -- référence matches.id
@@ -114,46 +105,57 @@ class Database:
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_match_elo_league_date ON match_elo(league_code, date);")
 
+        # --- Table attendue par elo_system.py (sélectionne elo depuis team_stats) ---
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS team_stats (
+            team_id INTEGER PRIMARY KEY,
+            elo REAL DEFAULT 1500,
+            matches_played INTEGER DEFAULT 0,
+            league_id INTEGER,
+            season TEXT,
+            last_match_date TEXT
+        );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_team_stats_league ON team_stats(league_id);")
+
         conn.commit()
 
-        # --- Backfill des nouvelles colonnes si des lignes existent déjà ---
-        # Remplir league_id / goals_home / goals_away / team_ids quand NULL
+        # --- Backfill des colonnes calculées si des lignes existent déjà ---
         cur.execute("""
-            SELECT id, league_code, home, away, fthg, ftag, date
+            SELECT id, league_code, home, away, fthg, ftag, date, home_team_id, away_team_id, league_id, fixture_id
             FROM matches
-            WHERE home_team_id IS NULL OR away_team_id IS NULL
-               OR goals_home IS NULL OR goals_away IS NULL
-               OR league_id IS NULL OR fixture_id IS NULL
         """)
         rows = cur.fetchall()
-        for mid, lgc, home, away, fthg, ftag, dt in rows:
-            home_id = _crc32_int(f"team|{home}")
-            away_id = _crc32_int(f"team|{away}")
-            lg_id   = _crc32_int(f"league|{lgc}")
-            fxid    = _crc32_int(f"{dt or ''}|{lgc or ''}|{home or ''}|{away or ''}")
+        for (mid, lgc, home, away, fthg, ftag, dt, h_id, a_id, lg_id, fxid) in rows:
+            new_home_id = h_id or _crc32_int(f"team|{home}")
+            new_away_id = a_id or _crc32_int(f"team|{away}")
+            new_league_id = lg_id or _crc32_int(f"league|{lgc}")
+            new_fixture_id = fxid or _crc32_int(f"{dt or ''}|{lgc or ''}|{home or ''}|{away or ''}")
+            goals_home = fthg
+            goals_away = ftag
 
-            # Upsert teams
+            # upsert teams
             if home:
-                try:
-                    cur.execute("INSERT OR IGNORE INTO teams(team_id, name) VALUES (?, ?);", (home_id, home))
-                except Exception:
-                    pass
+                cur.execute("INSERT OR IGNORE INTO teams(team_id, name) VALUES (?, ?);", (new_home_id, home))
             if away:
-                try:
-                    cur.execute("INSERT OR IGNORE INTO teams(team_id, name) VALUES (?, ?);", (away_id, away))
-                except Exception:
-                    pass
+                cur.execute("INSERT OR IGNORE INTO teams(team_id, name) VALUES (?, ?);", (new_away_id, away))
 
             cur.execute("""
                 UPDATE matches
-                SET home_team_id = COALESCE(home_team_id, ?),
-                    away_team_id = COALESCE(away_team_id, ?),
-                    goals_home   = COALESCE(goals_home, ?),
-                    goals_away   = COALESCE(goals_away, ?),
-                    league_id    = COALESCE(league_id, ?),
-                    fixture_id   = COALESCE(fixture_id, ?)
+                SET home_team_id = ?,
+                    away_team_id = ?,
+                    goals_home   = ?,
+                    goals_away   = ?,
+                    league_id    = ?,
+                    fixture_id   = ?
                 WHERE id = ?;
-            """, (home_id, away_id, fthg, ftag, lg_id, fxid, mid))
+            """, (new_home_id, new_away_id, goals_home, goals_away, new_league_id, new_fixture_id, mid))
+
+            # seed minimal team_stats (si absent) pour éviter SELECT vide
+            cur.execute("INSERT OR IGNORE INTO team_stats(team_id, elo, league_id, season, last_match_date) VALUES (?, 1500, ?, ?, NULL);",
+                        (new_home_id, new_league_id, None))
+            cur.execute("INSERT OR IGNORE INTO team_stats(team_id, elo, league_id, season, last_match_date) VALUES (?, 1500, ?, ?, NULL);",
+                        (new_away_id, new_league_id, None))
 
         conn.commit()
         conn.close()
@@ -161,7 +163,7 @@ class Database:
     def insert_match(self, season, league_code, home, away, fthg, ftag, result,
                      btts_yes=None, btts_no=None,
                      odds_home=None, odds_draw=None, odds_away=None, date=None):
-        """Insère un match avec toutes les colonnes compatibles ELO."""
+        """Insère un match avec colonnes compatibles ELO + fixture_id stable."""
         home_id = _crc32_int(f"team|{home}")
         away_id = _crc32_int(f"team|{away}")
         league_id = _crc32_int(f"league|{league_code}")
@@ -207,6 +209,12 @@ class Database:
               home_id, away_id,
               fthg, ftag, fthg, ftag, result,
               btts_yes, btts_no, odds_home, odds_draw, odds_away, fixture_id))
+
+        # seed minimal team_stats pour ces équipes (si pas encore présentes)
+        cur.execute("INSERT OR IGNORE INTO team_stats(team_id, elo, league_id, season, last_match_date) VALUES (?, 1500, ?, ?, NULL);",
+                    (home_id, league_id, season))
+        cur.execute("INSERT OR IGNORE INTO team_stats(team_id, elo, league_id, season, last_match_date) VALUES (?, 1500, ?, ?, NULL);",
+                    (away_id, league_id, season))
 
         conn.commit()
         conn.close()
