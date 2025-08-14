@@ -1,16 +1,29 @@
 import os
+import sqlite3
 import requests
 from datetime import datetime
 from src.models.database import db
 
-RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 API_HOST = "api-football-v1.p.rapidapi.com"
+API_KEY = os.getenv("RAPIDAPI_KEY")
+DB_PATH = os.path.join("data", "football.db")
 
-def clean_str(value):
-    """Nettoie et force en string pour éviter les erreurs SQLite."""
-    if value is None:
-        return ""
-    return str(value).strip()
+# --------- Helpers ---------
+def ensure_columns():
+    """Ajoute automatiquement les colonnes manquantes dans matches"""
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    def column_exists(table, column):
+        cur.execute(f"PRAGMA table_info({table})")
+        return column in [row[1] for row in cur.fetchall()]
+
+    if not column_exists("matches", "status"):
+        print("🛠 Ajout colonne 'status' dans matches...")
+        cur.execute("ALTER TABLE matches ADD COLUMN status TEXT")
+
+    conn.commit()
+    conn.close()
 
 def fetch_today_fixtures():
     today = datetime.utcnow().strftime("%Y-%m-%d")
@@ -18,7 +31,7 @@ def fetch_today_fixtures():
 
     headers = {
         "x-rapidapi-host": API_HOST,
-        "x-rapidapi-key": RAPIDAPI_KEY
+        "x-rapidapi-key": API_KEY
     }
 
     response = requests.get(url, headers=headers)
@@ -29,28 +42,31 @@ def fetch_today_fixtures():
     print(f"📅 {today} - fixtures trouvées: {len(fixtures)}")
     return fixtures
 
+# --------- Main ---------
 def main():
+    ensure_columns()  # on s'assure que la table est prête
     fixtures = fetch_today_fixtures()
 
     for fixture in fixtures:
-        f_id = clean_str(fixture["fixture"]["id"])
-        date = clean_str(fixture["fixture"]["date"])
-        league_id = clean_str(fixture["league"]["id"])
-        season = clean_str(fixture["league"]["season"])
-        home = clean_str(fixture["teams"]["home"]["id"])
-        away = clean_str(fixture["teams"]["away"]["id"])
+        fid = fixture["fixture"]["id"]
+        league = fixture["league"]["name"]
+        season = fixture["league"]["season"]
+        date_str = fixture["fixture"]["date"]
+        status = fixture["fixture"]["status"]["short"]
+
+        home_team = fixture["teams"]["home"]["name"]
+        away_team = fixture["teams"]["away"]["name"]
+
         home_score = fixture["goals"]["home"]
         away_score = fixture["goals"]["away"]
-        status = clean_str(fixture["fixture"]["status"]["short"])
 
-        # ✅ Insertion sécurisée
         db.insert_match(
-            fixture_id=f_id,
-            date=date,
-            league_id=league_id,
+            fixture_id=fid,
+            league=league,
             season=season,
-            home=home,
-            away=away,
+            date=date_str,
+            home_team=home_team,
+            away_team=away_team,
             home_score=home_score,
             away_score=away_score,
             status=status
