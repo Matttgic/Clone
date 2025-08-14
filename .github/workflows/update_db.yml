@@ -37,9 +37,9 @@ jobs:
       
       - name: Backfill (historique récent par défaut 60j)
         env:
-          HISTORY_DAYS: 60
-        run: |
-          python scripts/backfill_history.py
+        HISTORY_DAYS: 60
+        PYTHONUNBUFFERED: '1'   # ← force les prints immédiats
+        run: python -u scripts/backfill_history.py 
 
       # 2) Construire l'ELO historique
       - name: Build ELO history
