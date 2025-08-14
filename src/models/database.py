@@ -1,3 +1,4 @@
+# src/models/database.py
 import sqlite3
 import os
 import zlib
@@ -105,7 +106,7 @@ class Database:
         cur.execute("PRAGMA table_info(match_elo);")
         me_cols = {row[1] for row in cur.fetchall()}
 
-        # Colonnes “nouvelles” attendues par build_elo_history.py
+        # Colonnes nouvelles attendues par build_elo_history.py
         to_add = []
         if "fixture_id" not in me_cols:      to_add.append(("fixture_id", "INTEGER"))
         if "home_pre_elo" not in me_cols:    to_add.append(("home_pre_elo", "REAL"))
@@ -113,7 +114,10 @@ class Database:
         if "home_post_elo" not in me_cols:   to_add.append(("home_post_elo", "REAL"))
         if "away_post_elo" not in me_cols:   to_add.append(("away_post_elo", "REAL"))
         if "k" not in me_cols:               to_add.append(("k", "REAL"))
-        # Prob cols existent déjà sous prob_home/draw/away (on garde ces noms aussi)
+        # 👉 Probabilités avec les NOMS attendus par ton script
+        if "home_win_prob" not in me_cols:   to_add.append(("home_win_prob", "REAL"))
+        if "draw_prob" not in me_cols:       to_add.append(("draw_prob", "REAL"))
+        if "away_win_prob" not in me_cols:   to_add.append(("away_win_prob", "REAL"))
 
         for col, typ in to_add:
             cur.execute(f"ALTER TABLE match_elo ADD COLUMN {col} {typ};")
@@ -121,6 +125,16 @@ class Database:
         # Index utiles sur match_elo
         cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_match_elo_fixture ON match_elo(fixture_id);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_match_elo_league_date ON match_elo(league_code, date);")
+
+        # Backfill des nouvelles proba si les anciennes existent
+        # (copie prob_home/draw/away -> home_win_prob/draw_prob/away_win_prob si NULL)
+        cur.execute("""
+            UPDATE match_elo
+            SET home_win_prob = COALESCE(home_win_prob, prob_home),
+                draw_prob     = COALESCE(draw_prob, prob_draw),
+                away_win_prob = COALESCE(away_win_prob, prob_away)
+        """)
+        conn.commit()
 
         # --- Table team_stats utilisée par elo_system.py (get_team_elo) ---
         cur.execute("""
@@ -252,4 +266,4 @@ class Database:
 
 
 # Instance globale
-db = Database(DB_PATH)
+db = Database(DB_PATH) 
