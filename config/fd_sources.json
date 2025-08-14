@@ -1,35 +1,20 @@
 {
   "sources": [
-    /* ——— Angleterre ——— */
     { "league_code": "E0", "season": "2024-25", "url": "https://www.football-data.co.uk/mmz4281/2425/E0.csv" },
     { "league_code": "E1", "season": "2024-25", "url": "https://www.football-data.co.uk/mmz4281/2425/E1.csv" },
-
-    /* ——— Espagne ——— */
     { "league_code": "SP1", "season": "2024-25", "url": "https://www.football-data.co.uk/mmz4281/2425/SP1.csv" },
     { "league_code": "SP2", "season": "2024-25", "url": "https://www.football-data.co.uk/mmz4281/2425/SP2.csv" },
-
-    /* ——— France ——— */
     { "league_code": "F1", "season": "2024-25", "url": "https://www.football-data.co.uk/mmz4281/2425/F1.csv" },
     { "league_code": "F2", "season": "2024-25", "url": "https://www.football-data.co.uk/mmz4281/2425/F2.csv" },
-
-    /* ——— Italie ——— */
     { "league_code": "I1", "season": "2024-25", "url": "https://www.football-data.co.uk/mmz4281/2425/I1.csv" },
     { "league_code": "I2", "season": "2024-25", "url": "https://www.football-data.co.uk/mmz4281/2425/I2.csv" },
-
-    /* ——— Allemagne ——— */
     { "league_code": "D1", "season": "2024-25", "url": "https://www.football-data.co.uk/mmz4281/2425/D1.csv" },
     { "league_code": "D2", "season": "2024-25", "url": "https://www.football-data.co.uk/mmz4281/2425/D2.csv" },
-
-    /* ——— Pays-Bas / Belgique / Portugal ——— */
     { "league_code": "N1", "season": "2024-25", "url": "https://www.football-data.co.uk/mmz4281/2425/N1.csv" },
     { "league_code": "B1", "season": "2024-25", "url": "https://www.football-data.co.uk/mmz4281/2425/B1.csv" },
     { "league_code": "P1", "season": "2024-25", "url": "https://www.football-data.co.uk/mmz4281/2425/P1.csv" },
-
-    /* ——— Turquie / Grèce ——— */
     { "league_code": "T1", "season": "2024-25", "url": "https://www.football-data.co.uk/mmz4281/2425/T1.csv" },
     { "league_code": "G1", "season": "2024-25", "url": "https://www.football-data.co.uk/mmz4281/2425/G1.csv" },
-
-    /* ——— Ligues “new” (fichiers agrégés courants) ——— */
     { "league_code": "ARG", "season": "current", "url": "https://www.football-data.co.uk/new/ARG.csv" },
     { "league_code": "AUT", "season": "current", "url": "https://www.football-data.co.uk/new/AUT.csv" },
     { "league_code": "BRA", "season": "current", "url": "https://www.football-data.co.uk/new/BRA.csv" },
