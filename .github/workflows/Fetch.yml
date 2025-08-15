@@ -1,0 +1,189 @@
+name: Daily Fixtures & Predictions (Fixed)
+
+on:
+  schedule:
+    - cron: "0 8 * * *"   # Tous les jours à 08:00 UTC
+    - cron: "0 14 * * *"  # Backup à 14:00 UTC
+  workflow_dispatch:
+    inputs:
+      debug_mode:
+        description: 'Enable debug mode'
+        required: false
+        default: 'false'
+        type: boolean
+      target_date:
+        description: 'Target date (YYYY-MM-DD, optional)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  fetch_predict:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      DEBUG_MODE: ${{ inputs.debug_mode || 'false' }}
+      TARGET_DATE: ${{ inputs.target_date }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests>=2.31.0 pandas>=2.0.0
+
+      - name: Ensure data dir
+        run: mkdir -p data
+
+      # 🔧 Migration anti "datatype mismatch"
+      - name: Migrate team_stats.team_id to TEXT
+        run: python -u scripts/migrate_team_stats_text.py
+
+      # 🔍 Debug step (only if debug mode enabled)
+      - name: Run API Debug
+        if: env.DEBUG_MODE == 'true'
+        env:
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+        run: python -u scripts/debug_today.py
+
+      # 🧲 Fetch fixtures with improved strategy
+      - name: Fetch fixtures (Multi-date strategy)
+        env:
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+        run: |
+          echo "🎯 Fetching fixtures with multi-date strategy..."
+          
+          # Try today first
+          python -u scripts/fetch_today.py || echo "Today failed, continuing..."
+          
+          # Check if we got any matches for today
+          MATCH_COUNT=$(python -c "
+from src.models.database import db
+import datetime
+today = datetime.datetime.utcnow().strftime('%Y-%m-%d')
+with db.get_connection() as conn:
+    count = conn.execute('SELECT COUNT(*) FROM matches WHERE substr(date,1,10)=?', (today,)).fetchone()[0]
+    print(count)
+          ")
+          
+          echo "Matches found for today: $MATCH_COUNT"
+          
+          # If no matches today, try tomorrow
+          if [ "$MATCH_COUNT" -eq "0" ]; then
+            echo "🔄 No matches today, trying tomorrow..."
+            # Calculate tomorrow's date using Python
+            TOMORROW=$(python -c "import datetime; print((datetime.datetime.utcnow() + datetime.timedelta(days=1)).strftime('%Y-%m-%d'))")
+            echo "Tomorrow's date: $TOMORROW"
+            DATE=$TOMORROW python -u scripts/fetch_today.py || echo "Tomorrow failed too"
+            
+            # Check tomorrow's results
+            TOMORROW_COUNT=$(python -c "
+from src.models.database import db
+import datetime
+tomorrow = (datetime.datetime.utcnow() + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+with db.get_connection() as conn:
+    count = conn.execute('SELECT COUNT(*) FROM matches WHERE substr(date,1,10)=?', (tomorrow,)).fetchone()[0]
+    print(count)
+            ")
+            echo "Matches found for tomorrow: $TOMORROW_COUNT"
+          fi
+
+      # ♟️ Build ELO history
+      - name: Build ELO history
+        run: python -u scripts/build_elo_history.py
+
+      # 🧮 Generate predictions
+      - name: Generate predictions
+        run: |
+          echo "🧮 Generating predictions..."
+          python -u scripts/generate_predictions.py
+          
+          # Check prediction count
+          PRED_COUNT=$(python -c "
+from src.models.database import db
+import datetime
+today = datetime.datetime.utcnow().strftime('%Y-%m-%d')
+with db.get_connection() as conn:
+    count = conn.execute('SELECT COUNT(*) FROM predictions WHERE substr(created_at,1,10)=?', (today,)).fetchone()[0]
+    print(count)
+          ")
+          
+          echo "Predictions generated: $PRED_COUNT"
+
+      # 📊 Compute method stats
+      - name: Compute method stats
+        run: python -u scripts/odds_method_stats.py
+
+      # 📤 Export predictions
+      - name: Export predictions
+        run: |
+          mkdir -p predictions
+          python -u scripts/export_predictions.py --days 1
+          
+          # If no predictions for today, export recent data
+          TODAY=$(date -u +%Y-%m-%d)
+          if [ ! -f "predictions/${TODAY}.csv" ]; then
+            echo "⚠️ No predictions for today, trying recent data..."
+            python -u scripts/export_predictions.py --days 7
+          fi
+
+      # 📋 Create summary report
+      - name: Generate Summary Report
+        run: |
+          echo "📋 DAILY SUMMARY REPORT" > predictions/daily_summary.md
+          echo "======================" >> predictions/daily_summary.md
+          echo "Date: $(date -u)" >> predictions/daily_summary.md
+          echo "" >> predictions/daily_summary.md
+          
+          # Database stats
+          python -c "
+from src.models.database import db
+import datetime
+today = datetime.datetime.utcnow().strftime('%Y-%m-%d')
+with db.get_connection() as conn:
+    matches = conn.execute('SELECT COUNT(*) FROM matches WHERE substr(date,1,10)=?', (today,)).fetchone()[0]
+    predictions = conn.execute('SELECT COUNT(*) FROM predictions WHERE substr(created_at,1,10)=?', (today,)).fetchone()[0]
+    teams = conn.execute('SELECT COUNT(*) FROM teams').fetchone()[0]
+    print(f'📊 **Stats:**')
+    print(f'- Matches today: {matches}')
+    print(f'- Predictions: {predictions}') 
+    print(f'- Teams in DB: {teams}')
+          " >> predictions/daily_summary.md
+
+      # 💾 Commit & Push
+      - name: Commit & Push updates
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+          
+          if git diff --quiet && git diff --staged --quiet; then
+            echo "ℹ️ No changes to commit"
+          else
+            git add -A
+            
+            # Create meaningful commit message
+            MATCH_COUNT=$(python -c "
+from src.models.database import db
+import datetime
+today = datetime.datetime.utcnow().strftime('%Y-%m-%d')
+with db.get_connection() as conn:
+    count = conn.execute('SELECT COUNT(*) FROM matches WHERE substr(date,1,10)=?', (today,)).fetchone()[0]
+    print(count)
+            " 2>/dev/null || echo "0")
+            
+            git commit -m "Daily update: $MATCH_COUNT matches processed [skip ci]" || echo "Commit failed"
+            git push || echo "Push failed"
+          fi
