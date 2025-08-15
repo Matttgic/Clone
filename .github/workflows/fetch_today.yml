@@ -43,7 +43,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install requests>=2.31.0 pandas>=2.0.0
 
       - name: Ensure data dir
         run: mkdir -p data
@@ -71,12 +71,12 @@ jobs:
           
           # Check if we got any matches for today
           MATCH_COUNT=$(python -c "
-          from src.models.database import db
-          import datetime
-          today = datetime.datetime.utcnow().strftime('%Y-%m-%d')
-          with db.get_connection() as conn:
-              count = conn.execute('SELECT COUNT(*) FROM matches WHERE substr(date,1,10)=?', (today,)).fetchone()[0]
-              print(count)
+from src.models.database import db
+import datetime
+today = datetime.datetime.utcnow().strftime('%Y-%m-%d')
+with db.get_connection() as conn:
+    count = conn.execute('SELECT COUNT(*) FROM matches WHERE substr(date,1,10)=?', (today,)).fetchone()[0]
+    print(count)
           ")
           
           echo "Matches found for today: $MATCH_COUNT"
@@ -91,12 +91,12 @@ jobs:
             
             # Check tomorrow's results
             TOMORROW_COUNT=$(python -c "
-            from src.models.database import db
-            import datetime
-            tomorrow = (datetime.datetime.utcnow() + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
-            with db.get_connection() as conn:
-                count = conn.execute('SELECT COUNT(*) FROM matches WHERE substr(date,1,10)=?', (tomorrow,)).fetchone()[0]
-                print(count)
+from src.models.database import db
+import datetime
+tomorrow = (datetime.datetime.utcnow() + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+with db.get_connection() as conn:
+    count = conn.execute('SELECT COUNT(*) FROM matches WHERE substr(date,1,10)=?', (tomorrow,)).fetchone()[0]
+    print(count)
             ")
             echo "Matches found for tomorrow: $TOMORROW_COUNT"
           fi
@@ -113,12 +113,12 @@ jobs:
           
           # Check prediction count
           PRED_COUNT=$(python -c "
-          from src.models.database import db
-          import datetime
-          today = datetime.datetime.utcnow().strftime('%Y-%m-%d')
-          with db.get_connection() as conn:
-              count = conn.execute('SELECT COUNT(*) FROM predictions WHERE substr(created_at,1,10)=?', (today,)).fetchone()[0]
-              print(count)
+from src.models.database import db
+import datetime
+today = datetime.datetime.utcnow().strftime('%Y-%m-%d')
+with db.get_connection() as conn:
+    count = conn.execute('SELECT COUNT(*) FROM predictions WHERE substr(created_at,1,10)=?', (today,)).fetchone()[0]
+    print(count)
           ")
           
           echo "Predictions generated: $PRED_COUNT"
@@ -150,17 +150,17 @@ jobs:
           
           # Database stats
           python -c "
-          from src.models.database import db
-          import datetime
-          today = datetime.datetime.utcnow().strftime('%Y-%m-%d')
-          with db.get_connection() as conn:
-              matches = conn.execute('SELECT COUNT(*) FROM matches WHERE substr(date,1,10)=?', (today,)).fetchone()[0]
-              predictions = conn.execute('SELECT COUNT(*) FROM predictions WHERE substr(created_at,1,10)=?', (today,)).fetchone()[0]
-              teams = conn.execute('SELECT COUNT(*) FROM teams').fetchone()[0]
-              print(f'📊 **Stats:**')
-              print(f'- Matches today: {matches}')
-              print(f'- Predictions: {predictions}') 
-              print(f'- Teams in DB: {teams}')
+from src.models.database import db
+import datetime
+today = datetime.datetime.utcnow().strftime('%Y-%m-%d')
+with db.get_connection() as conn:
+    matches = conn.execute('SELECT COUNT(*) FROM matches WHERE substr(date,1,10)=?', (today,)).fetchone()[0]
+    predictions = conn.execute('SELECT COUNT(*) FROM predictions WHERE substr(created_at,1,10)=?', (today,)).fetchone()[0]
+    teams = conn.execute('SELECT COUNT(*) FROM teams').fetchone()[0]
+    print(f'📊 **Stats:**')
+    print(f'- Matches today: {matches}')
+    print(f'- Predictions: {predictions}') 
+    print(f'- Teams in DB: {teams}')
           " >> predictions/daily_summary.md
 
       # 💾 Commit & Push
@@ -176,12 +176,12 @@ jobs:
             
             # Create meaningful commit message
             MATCH_COUNT=$(python -c "
-            from src.models.database import db
-            import datetime
-            today = datetime.datetime.utcnow().strftime('%Y-%m-%d')
-            with db.get_connection() as conn:
-                count = conn.execute('SELECT COUNT(*) FROM matches WHERE substr(date,1,10)=?', (today,)).fetchone()[0]
-                print(count)
+from src.models.database import db
+import datetime
+today = datetime.datetime.utcnow().strftime('%Y-%m-%d')
+with db.get_connection() as conn:
+    count = conn.execute('SELECT COUNT(*) FROM matches WHERE substr(date,1,10)=?', (today,)).fetchone()[0]
+    print(count)
             " 2>/dev/null || echo "0")
             
             git commit -m "Daily update: $MATCH_COUNT matches processed [skip ci]" || echo "Commit failed"
