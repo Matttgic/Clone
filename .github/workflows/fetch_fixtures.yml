@@ -1,0 +1,41 @@
+# 🧲 Fetch fixtures with improved strategy
+      - name: Fetch fixtures (Multi-date strategy)
+        env:
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+        run: |
+          echo "🎯 Fetching fixtures with multi-date strategy..."
+          
+          # Try today first
+          python -u scripts/fetch_today.py || echo "Today failed, continuing..."
+          
+          # Check if we got any matches for today
+          MATCH_COUNT=$(python -c "
+from src.models.database import db
+import datetime
+today = datetime.datetime.utcnow().strftime('%Y-%m-%d')
+with db.get_connection() as conn:
+    count = conn.execute('SELECT COUNT(*) FROM matches WHERE substr(date,1,10)=?', (today,)).fetchone()[0]
+    print(count)
+          ")
+          
+          echo "Matches found for today: $MATCH_COUNT"
+          
+          # If no matches today, try tomorrow
+          if [ "$MATCH_COUNT" -eq "0" ]; then
+            echo "🔄 No matches today, trying tomorrow..."
+            # Calculate tomorrow's date using Python
+            TOMORROW=$(python -c "import datetime; print((datetime.datetime.utcnow() + datetime.timedelta(days=1)).strftime('%Y-%m-%d'))")
+            echo "Tomorrow's date: $TOMORROW"
+            DATE=$TOMORROW python -u scripts/fetch_today.py || echo "Tomorrow failed too"
+            
+            # Check tomorrow's results
+            TOMORROW_COUNT=$(python -c "
+from src.models.database import db
+import datetime
+tomorrow = (datetime.datetime.utcnow() + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+with db.get_connection() as conn:
+    count = conn.execute('SELECT COUNT(*) FROM matches WHERE substr(date,1,10)=?', (tomorrow,)).fetchone()[0]
+    print(count)
+            ")
+            echo "Matches found for tomorrow: $TOMORROW_COUNT"
+          fi
