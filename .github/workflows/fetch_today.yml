@@ -1,9 +1,9 @@
-name: Daily Fixtures & Predictions (Improved)
+name: Daily Fixtures & Predictions (Fixed)
 
 on:
   schedule:
     - cron: "0 8 * * *"   # Tous les jours à 08:00 UTC
-    - cron: "0 14 * * *"  # Backup à 14:00 UTC (pour capturer plus de matchs)
+    - cron: "0 14 * * *"  # Backup à 14:00 UTC
   workflow_dispatch:
     inputs:
       debug_mode:
@@ -59,7 +59,7 @@ jobs:
           RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
         run: python -u scripts/debug_today.py
 
-      # 🧲 Fetch fixtures with fallback strategy
+      # 🧲 Fetch fixtures with improved strategy
       - name: Fetch fixtures (Multi-date strategy)
         env:
           RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
@@ -69,7 +69,7 @@ jobs:
           # Try today first
           python -u scripts/fetch_today.py || echo "Today failed, continuing..."
           
-          # Check if we got any matches
+          # Check if we got any matches for today
           MATCH_COUNT=$(python -c "
           from src.models.database import db
           import datetime
@@ -81,23 +81,32 @@ jobs:
           
           echo "Matches found for today: $MATCH_COUNT"
           
-          # If no matches today, try tomorrow (sometimes fixtures are published for next day)
+          # If no matches today, try tomorrow
           if [ "$MATCH_COUNT" -eq "0" ]; then
             echo "🔄 No matches today, trying tomorrow..."
-            TOMORROW=$(python -c "
-            import datetime
-            tomorrow = datetime.datetime.utcnow() + datetime.timedelta(days=1)
-            print(tomorrow.strftime('%Y-%m-%d'))
-            ")
+            # Calculate tomorrow's date using Python
+            TOMORROW=$(python -c "import datetime; print((datetime.datetime.utcnow() + datetime.timedelta(days=1)).strftime('%Y-%m-%d'))")
+            echo "Tomorrow's date: $TOMORROW"
             DATE=$TOMORROW python -u scripts/fetch_today.py || echo "Tomorrow failed too"
+            
+            # Check tomorrow's results
+            TOMORROW_COUNT=$(python -c "
+            from src.models.database import db
+            import datetime
+            tomorrow = (datetime.datetime.utcnow() + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+            with db.get_connection() as conn:
+                count = conn.execute('SELECT COUNT(*) FROM matches WHERE substr(date,1,10)=?', (tomorrow,)).fetchone()[0]
+                print(count)
+            ")
+            echo "Matches found for tomorrow: $TOMORROW_COUNT"
           fi
 
       # ♟️ Build ELO history
       - name: Build ELO history
         run: python -u scripts/build_elo_history.py
 
-      # 🧮 Generate predictions with enhanced strategy
-      - name: Generate predictions (Enhanced)
+      # 🧮 Generate predictions
+      - name: Generate predictions
         run: |
           echo "🧮 Generating predictions..."
           python -u scripts/generate_predictions.py
@@ -114,18 +123,19 @@ jobs:
           
           echo "Predictions generated: $PRED_COUNT"
 
-      # 📊 Compute method stats for enhanced predictions
+      # 📊 Compute method stats
       - name: Compute method stats
         run: python -u scripts/odds_method_stats.py
 
-      # 📤 Export predictions with fallback
-      - name: Export predictions (Enhanced)
+      # 📤 Export predictions
+      - name: Export predictions
         run: |
           mkdir -p predictions
           python -u scripts/export_predictions.py --days 1
           
-          # If no predictions for today, export last available
-          if [ ! -f "predictions/$(date -u +%Y-%m-%d).csv" ]; then
+          # If no predictions for today, export recent data
+          TODAY=$(date -u +%Y-%m-%d)
+          if [ ! -f "predictions/${TODAY}.csv" ]; then
             echo "⚠️ No predictions for today, trying recent data..."
             python -u scripts/export_predictions.py --days 7
           fi
@@ -153,7 +163,7 @@ jobs:
               print(f'- Teams in DB: {teams}')
           " >> predictions/daily_summary.md
 
-      # 💾 Commit & Push with better error handling
+      # 💾 Commit & Push
       - name: Commit & Push updates
         run: |
           git config --global user.name "github-actions"
