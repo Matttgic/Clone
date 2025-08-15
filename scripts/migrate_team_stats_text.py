@@ -1,87 +1,82 @@
+# scripts/migrate_team_stats_text.py
+"""
+Migration pour s'assurer que team_stats.team_id est en format TEXT
+pour éviter les erreurs "datatype mismatch"
+"""
+import os
 import sqlite3
-from pathlib import Path
+from src.models.database import DB_PATH
 
-DB_PATH = Path("data/football.db")
-
-def table_exists(cur, name: str) -> bool:
-    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name,))
-    return cur.fetchone() is not None
-
-def columns(cur, table: str):
-    cur.execute(f"PRAGMA table_info({table})")
-    return [r[1] for r in cur.fetchall()]
-
-def migrate_team_stats_text():
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-
-    print("🔍 Migration team_stats.team_id -> TEXT...")
-
-    if not table_exists(cur, "team_stats"):
-        print("⚠️ Table team_stats inexistante — création directe.")
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS team_stats (
-                team_id TEXT PRIMARY KEY,
-                elo REAL,
-                updated_at TEXT
-            )
-        """)
-        conn.commit()
-        conn.close()
-        print("✅ Créée (vide).")
+def migrate_team_stats():
+    """Migre team_stats pour s'assurer que team_id est TEXT"""
+    print("🔧 Migration: team_stats.team_id -> TEXT")
+    
+    if not os.path.exists(DB_PATH):
+        print(f"⚠️ Database not found at {DB_PATH}, skipping migration")
         return
-
-    old_cols = set(columns(cur, "team_stats"))
-
-    # Si le schéma est déjà le bon (team_id TEXT + updated_at présent), on sort
-    # Impossible de connaitre le type exact via PRAGMA, donc on recrée toujours proprement
-    print(f"ℹ️ Colonnes actuelles: {sorted(old_cols)}")
-
-    cur.execute("ALTER TABLE team_stats RENAME TO team_stats_old")
-
-    cur.execute("""
-        CREATE TABLE team_stats (
-            team_id TEXT PRIMARY KEY,
-            elo REAL,
-            updated_at TEXT
-        )
-    """)
-
-    # Build SELECT list depuis l'ancienne table
-    # team_id -> CAST en TEXT
-    select_parts = []
-    if "team_id" in old_cols:
-        select_parts.append("CAST(team_id AS TEXT) AS team_id")
-    else:
-        # Cas improbable : on crée une clé synthétique (skip si rien à copier)
-        select_parts.append("NULL AS team_id")
-
-    # elo si présent, sinon NULL
-    if "elo" in old_cols:
-        select_parts.append("elo")
-    else:
-        select_parts.append("NULL AS elo")
-
-    # updated_at si présent, sinon datetime('now')
-    if "updated_at" in old_cols:
-        select_parts.append("updated_at")
-    else:
-        select_parts.append("datetime('now') AS updated_at")
-
-    select_sql = ", ".join(select_parts)
-
-    # Copier les données (si team_id existe)
-    if "team_id" in old_cols:
-        copy_sql = f"INSERT INTO team_stats (team_id, elo, updated_at) SELECT {select_sql} FROM team_stats_old"
-        cur.execute(copy_sql)
-    else:
-        print("⚠️ Ancienne table sans colonne team_id: aucune donnée copiée.")
-
-    cur.execute("DROP TABLE team_stats_old")
-
-    conn.commit()
-    conn.close()
-    print("✅ Migration terminée — team_id TEXT, updated_at présent.")
+    
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            
+            # Vérifier la structure actuelle
+            cursor = conn.execute("PRAGMA table_info(team_stats)")
+            columns = {row['name']: row['type'] for row in cursor.fetchall()}
+            
+            if 'team_id' not in columns:
+                print("⚠️ team_stats.team_id column not found, skipping")
+                return
+            
+            current_type = columns['team_id'].upper()
+            print(f"📊 Current team_id type: {current_type}")
+            
+            if current_type == 'TEXT':
+                print("✅ team_id is already TEXT, no migration needed")
+                return
+            
+            print("🔄 Migrating team_id to TEXT...")
+            
+            # Sauvegarder les données existantes
+            backup_data = conn.execute("SELECT * FROM team_stats").fetchall()
+            print(f"💾 Backing up {len(backup_data)} records")
+            
+            # Recréer la table avec le bon type
+            conn.execute("DROP TABLE IF EXISTS team_stats_backup")
+            conn.execute("""
+                CREATE TABLE team_stats_backup AS SELECT * FROM team_stats
+            """)
+            
+            conn.execute("DROP TABLE team_stats")
+            
+            conn.execute("""
+                CREATE TABLE team_stats (
+                    team_id TEXT PRIMARY KEY,
+                    elo REAL,
+                    updated_at TEXT DEFAULT (datetime('now'))
+                )
+            """)
+            
+            # Restaurer les données en convertissant team_id en TEXT
+            for row in backup_data:
+                conn.execute("""
+                    INSERT OR REPLACE INTO team_stats (team_id, elo, updated_at)
+                    VALUES (?, ?, ?)
+                """, (str(row['team_id']), row['elo'], row['updated_at']))
+            
+            conn.execute("DROP TABLE team_stats_backup")
+            conn.commit()
+            
+            print(f"✅ Migration completed: {len(backup_data)} records restored")
+            
+            # Vérification finale
+            cursor = conn.execute("PRAGMA table_info(team_stats)")
+            new_columns = {row['name']: row['type'] for row in cursor.fetchall()}
+            print(f"🎯 Final team_id type: {new_columns.get('team_id', 'UNKNOWN')}")
+            
+    except Exception as e:
+        print(f"❌ Migration failed: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
-    migrate_team_stats_text()
+    migrate_team_stats()
