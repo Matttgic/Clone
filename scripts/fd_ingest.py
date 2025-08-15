@@ -68,19 +68,24 @@ def parse_format_europe(df, code, season):
 
     for _, row in df.iterrows():
         date = str(row[date_col]) if date_col else None
+        home_team = str(row[home_col]) if home_col else None
+        away_team = str(row[away_col]) if away_col else None
+        home_score = int(row[fthg_col]) if fthg_col and pd.notna(row[fthg_col]) else None
+        away_score = int(row[ftag_col]) if ftag_col and pd.notna(row[ftag_col]) else None
+        
+        # Créer un fixture_id unique basé sur la date et les équipes
+        fixture_id = f"{code}_{date}_{home_team}_{away_team}" if date and home_team and away_team else None
+        
         db.insert_match(
+            date=date,
+            home_team=home_team,
+            away_team=away_team,
+            home_score=home_score,
+            away_score=away_score,
+            status="FT" if home_score is not None else "NS",
+            league=code,
             season=season,
-            home=row[home_col] if home_col else None,
-            away=row[away_col] if away_col else None,
-            fthg=row[fthg_col] if fthg_col else None,
-            ftag=row[ftag_col] if ftag_col else None,
-            result=row[res_col] if res_col else None,
-            btts_yes=row[btts_yes_col] if btts_yes_col else None,
-            btts_no=row[btts_no_col] if btts_no_col else None,
-            odds_home=row[odds_home_col] if odds_home_col else None,
-            odds_draw=row[odds_draw_col] if odds_draw_col else None,
-            odds_away=row[odds_away_col] if odds_away_col else None,
-            date=date
+            fixture_id=fixture_id
         )
 
 def parse_format_worldwide(df, code, season):
@@ -99,19 +104,24 @@ def parse_format_worldwide(df, code, season):
 
     for _, row in df.iterrows():
         date = str(row[date_col]) if date_col else None
+        home_team = str(row[home_col]) if home_col else None
+        away_team = str(row[away_col]) if away_col else None
+        home_score = int(row[fthg_col]) if fthg_col and pd.notna(row[fthg_col]) else None
+        away_score = int(row[ftag_col]) if ftag_col and pd.notna(row[ftag_col]) else None
+        
+        # Créer un fixture_id unique basé sur la date et les équipes
+        fixture_id = f"{code}_{date}_{home_team}_{away_team}" if date and home_team and away_team else None
+        
         db.insert_match(
+            date=date,
+            home_team=home_team,
+            away_team=away_team,
+            home_score=home_score,
+            away_score=away_score,
+            status="FT" if home_score is not None else "NS",
+            league=code,
             season=season,
-            home=row[home_col] if home_col else None,
-            away=row[away_col] if away_col else None,
-            fthg=row[fthg_col] if fthg_col else None,
-            ftag=row[ftag_col] if ftag_col else None,
-            result=row[res_col] if res_col else None,
-            btts_yes=row[btts_yes_col] if btts_yes_col else None,
-            btts_no=row[btts_no_col] if btts_no_col else None,
-            odds_home=row[odds_home_col] if odds_home_col else None,
-            odds_draw=row[odds_draw_col] if odds_draw_col else None,
-            odds_away=row[odds_away_col] if odds_away_col else None,
-            date=date
+            fixture_id=fixture_id
         )
 
 def main():
