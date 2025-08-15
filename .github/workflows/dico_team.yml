@@ -683,8 +683,7 @@ jobs:
               meta = report['metadata']
               print(f'SUCCESS|{meta[\"total_leagues_processed\"]}|{meta[\"total_teams_mapped\"]}|{meta[\"api_calls_made\"]}|{meta[\"success_rate\"]}')
           except:
-              print('ERROR|0|0|0|0')
-              " 2>/dev/null)
+              print('ERROR|0|0|0|0')" 2>/dev/null)
              
              IFS='|' read -r STATUS LEAGUES TEAMS CALLS SUCCESS_RATE <<< "$STATS"
              
