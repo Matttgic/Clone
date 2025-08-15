@@ -70,7 +70,6 @@ def parse_format_europe(df, code, season):
         date = str(row[date_col]) if date_col else None
         db.insert_match(
             season=season,
-            league_code=code,
             home=row[home_col] if home_col else None,
             away=row[away_col] if away_col else None,
             fthg=row[fthg_col] if fthg_col else None,
@@ -102,7 +101,6 @@ def parse_format_worldwide(df, code, season):
         date = str(row[date_col]) if date_col else None
         db.insert_match(
             season=season,
-            league_code=code,
             home=row[home_col] if home_col else None,
             away=row[away_col] if away_col else None,
             fthg=row[fthg_col] if fthg_col else None,
