@@ -1,10 +1,4 @@
-# Core dependencies
+# Football Prediction System - Dependencies
 requests>=2.31.0
 pandas>=2.0.0
-sqlite3  # Built-in with Python
-
-# Optional: for better data handling
-numpy>=1.24.0
-
-# Development/testing (optional)
-pytest>=7.0.0
+# sqlite3 is part of Python standard library - DO NOT include here
