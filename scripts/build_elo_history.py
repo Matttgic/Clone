@@ -28,10 +28,31 @@ def main():
         conn.commit()
 
     with db.get_connection() as conn:
-        rows = conn.execute("""
-            SELECT fixture_id, home_team_id, away_team_id, goals_home, goals_away, date
+        # S'adapter au schéma réel (essayer d'abord goals_home/goals_away, puis home_score/away_score)
+        cols = set(db._columns(conn, "matches"))
+        
+        # Choisir les colonnes de buts appropriées
+        if "goals_home" in cols and "goals_away" in cols:
+            goals_home_col, goals_away_col = "goals_home", "goals_away"
+        elif "home_score" in cols and "away_score" in cols:
+            goals_home_col, goals_away_col = "home_score", "away_score"
+        else:
+            print("❌ Aucune colonne de scores trouvée dans matches")
+            return
+            
+        # Choisir les colonnes d'équipes appropriées
+        if "home_team_id" in cols and "away_team_id" in cols:
+            home_col, away_col = "home_team_id", "away_team_id"
+        elif "home_team" in cols and "away_team" in cols:
+            home_col, away_col = "home_team", "away_team"
+        else:
+            print("❌ Aucune colonne d'équipes trouvée dans matches")
+            return
+
+        rows = conn.execute(f"""
+            SELECT fixture_id, {home_col}, {away_col}, {goals_home_col}, {goals_away_col}, date
             FROM matches
-            WHERE goals_home IS NOT NULL AND goals_away IS NOT NULL
+            WHERE {goals_home_col} IS NOT NULL AND {goals_away_col} IS NOT NULL
             ORDER BY date ASC
         """).fetchall()
 
