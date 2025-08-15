@@ -1,10 +1,5 @@
 name: Football-Data Pipeline
 
-on:
-  workflow_dispatch:  # lancement manuel
-  schedule:
-    - cron: "0 5 * * *"  # optionnel: tous les jours à 05h UTC
-
 jobs:
   ingest-and-build:
     runs-on: ubuntu-latest
