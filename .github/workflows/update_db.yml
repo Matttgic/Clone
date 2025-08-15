@@ -1,9 +1,5 @@
 name: Update DB + Predictions (Daily)
 
-on:
-  schedule:
-    - cron: "0 5 * * *"        # Tous les jours 05:00 UTC
-  workflow_dispatch:            # Lancer à la main si besoin
 
 jobs:
   update-db:
