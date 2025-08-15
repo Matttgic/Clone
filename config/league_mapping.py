@@ -22,15 +22,15 @@ LEAGUE_CODE_TO_API_ID = {
     "AUT": 218, # Tipp3 Bundesliga (Autriche)
     "BRA": 71,  # Serie A (Brésil)
     "DNK": 119, # Superligaen (Danemark)
-    "CHN": 169, # Chinese Super League (estimation basée sur votre config)
+    "CHN": 169, # Chinese Super League
     "FIN": 244, # Veikkausliiga (Finlande)
     "IRL": 357, # Premier Division (Irlande)
-    "JPN": 98,  # J1 League (estimation basée sur votre config)
+    "JPN": 98,  # J1 League
     "MEX": 262, # Liga MX (Mexique)
     "NOR": 103, # Eliteserien (Norvège)
     "POL": 106, # Ekstraklasa (Pologne)
     "ROU": 283, # Liga I (Roumanie)
     "SWE": 113, # Allsvenskan (Suède)
-    "SWZ": 207, # Super League (Suisse) - ID différent de la Grèce
+    "SWZ": 207, # Super League (Suisse)
     "USA": 253, # Major League Soccer (MLS)
 }
