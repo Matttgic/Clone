@@ -1,0 +1,650 @@
+name: Generate Team Mapping (One-time)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season (YYYY format, e.g., 2024)'
+        required: false
+        default: '2024'
+        type: string
+      output_format:
+        description: 'Output format'
+        required: false
+        default: 'both'
+        type: choice
+        options:
+          - 'json'
+          - 'csv' 
+          - 'both'
+
+permissions:
+  contents: write
+
+jobs:
+  generate-mapping:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate team mapping with detailed report
+        env:
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+          SEASON: ${{ inputs.season }}
+          OUTPUT_FORMAT: ${{ inputs.output_format }}
+        run: |
+          echo "🚀 Starting team mapping generation..."
+          
+          # Créer le script de génération avec rapport détaillé
+          cat > scripts/generate_team_mapping_report.py << 'EOF'
+          import requests
+          import pandas as pd
+          import json
+          import os
+          from datetime import datetime
+          from difflib import SequenceMatcher
+          from config.settings import Settings
+          from config.leagues import ALLOWED_LEAGUES
+          from config.league_mapping import LEAGUE_CODE_TO_API_ID
+          
+          class TeamMappingGenerator:
+              def __init__(self, season=2024):
+                  self.settings = Settings()
+                  self.season = season
+                  self.report = {
+                      "metadata": {
+                          "generated_at": datetime.now().isoformat(),
+                          "season": season,
+                          "total_leagues_processed": 0,
+                          "total_teams_mapped": 0,
+                          "api_calls_made": 0,
+                          "success_rate": 0.0
+                      },
+                      "leagues": {},
+                      "unmapped_teams": {},
+                      "mapping_stats": {},
+                      "errors": []
+                  }
+                  self.team_mapping = {}
+              
+              def get_league_standings(self, league_id):
+                  """Récupère les équipes via les standings de la ligue"""
+                  url = f"{self.settings.API.BASE_URL}/standings"
+                  params = {
+                      "league": league_id,
+                      "season": self.season
+                  }
+                  
+                  try:
+                      print(f"    📡 API call: standings for league {league_id}")
+                      response = requests.get(url, headers=self.settings.API.headers, params=params)
+                      self.report["metadata"]["api_calls_made"] += 1
+                      
+                      if response.status_code == 200:
+                          data = response.json()
+                          teams = []
+                          
+                          if data.get("response") and len(data["response"]) > 0:
+                              standings = data["response"][0]["league"]["standings"]
+                              
+                              # Gérer les différents formats de standings
+                              if isinstance(standings[0], list):
+                                  # Format avec groupes (ex: Champions League)
+                                  for group in standings:
+                                      for team_data in group:
+                                          teams.append({
+                                              "name": team_data["team"]["name"],
+                                              "id": team_data["team"]["id"],
+                                              "logo": team_data["team"]["logo"]
+                                          })
+                              else:
+                                  # Format simple
+                                  for team_data in standings:
+                                      teams.append({
+                                          "name": team_data["team"]["name"],
+                                          "id": team_data["team"]["id"],
+                                          "logo": team_data["team"]["logo"]
+                                      })
+                          
+                          print(f"    ✅ {len(teams)} teams found")
+                          return teams
+                      else:
+                          error_msg = f"API error {response.status_code} for league {league_id}"
+                          print(f"    ❌ {error_msg}")
+                          self.report["errors"].append(error_msg)
+                          return []
+                  except Exception as e:
+                      error_msg = f"Exception getting standings for league {league_id}: {str(e)}"
+                      print(f"    ❌ {error_msg}")
+                      self.report["errors"].append(error_msg)
+                      return []
+              
+              def get_fd_teams(self, csv_url):
+                  """Récupère les équipes depuis Football Data UK"""
+                  try:
+                      print(f"    🌐 Downloading: {csv_url}")
+                      df = pd.read_csv(csv_url)
+                      teams = set()
+                      
+                      if 'HomeTeam' in df.columns and 'AwayTeam' in df.columns:
+                          teams.update(df['HomeTeam'].dropna().unique())
+                          teams.update(df['AwayTeam'].dropna().unique())
+                          
+                      team_list = [team for team in teams if team and str(team).strip()]
+                      print(f"    ✅ {len(team_list)} teams found in CSV")
+                      return team_list
+                  except Exception as e:
+                      error_msg = f"Error downloading {csv_url}: {str(e)}"
+                      print(f"    ❌ {error_msg}")
+                      self.report["errors"].append(error_msg)
+                      return []
+              
+              def normalize_name(self, name):
+                  """Normalise le nom d'une équipe"""
+                  if not name or not isinstance(name, str):
+                      return ""
+                  
+                  replacements = {
+                      # Préfixes/suffixes
+                      "FC ": "", " FC": "", "CF ": "", " CF": "",
+                      "AC ": "", " AC": "", "SC ": "", " SC": "",
+                      "AS ": "", " AS": "", "CD ": "", " CD": "",
+                      "SK ": "", " SK": "", "FK ": "", " FK": "",
+                      "1. ": "", "2. ": "", "SV ": "", " SV": "",
+                      
+                      # Cas spéciaux
+                      "Real ": "", "Club ": "", "Deportivo ": "",
+                      "Saint ": "St ", "Saint-": "St-",
+                      "Athletic ": "", "Atletico ": "Atletico ",
+                      
+                      # Caractères
+                      "ü": "u", "ö": "o", "ä": "a", "ß": "ss",
+                      "é": "e", "è": "e", "ê": "e", "ë": "e",
+                      "à": "a", "á": "a", "â": "a", "ã": "a",
+                      "ç": "c", "ñ": "n", "ø": "o", "å": "a"
+                  }
+                  
+                  normalized = name
+                  for old, new in replacements.items():
+                      normalized = normalized.replace(old, new)
+                  
+                  return normalized.strip()
+              
+              def similarity(self, a, b):
+                  """Calcule la similarité entre deux chaînes"""
+                  return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+              
+              def match_teams(self, fd_teams, api_teams, league_name):
+                  """Fait correspondre les équipes"""
+                  mapping = {}
+                  match_details = []
+                  
+                  for fd_team in fd_teams:
+                      best_match = None
+                      best_score = 0
+                      best_api_team = None
+                      
+                      fd_normalized = self.normalize_name(fd_team)
+                      
+                      for api_team in api_teams:
+                          api_normalized = self.normalize_name(api_team["name"])
+                          
+                          # Match exact
+                          if fd_normalized.lower() == api_normalized.lower():
+                              mapping[fd_team] = api_team["name"]
+                              match_details.append({
+                                  "fd_team": fd_team,
+                                  "api_team": api_team["name"],
+                                  "api_team_id": api_team["id"],
+                                  "match_type": "exact",
+                                  "confidence": 1.0
+                              })
+                              best_match = None  # Arrêter la recherche
+                              break
+                          
+                          # Match par similarité
+                          score = self.similarity(fd_normalized, api_normalized)
+                          if score > best_score:
+                              best_score = score
+                              best_match = api_team["name"]
+                              best_api_team = api_team
+                      
+                      # Si pas de match exact, utiliser le meilleur match si > 75%
+                      if fd_team not in mapping and best_match and best_score > 0.75:
+                          mapping[fd_team] = best_match
+                          match_details.append({
+                              "fd_team": fd_team,
+                              "api_team": best_match,
+                              "api_team_id": best_api_team["id"],
+                              "match_type": "similarity",
+                              "confidence": round(best_score, 3)
+                          })
+                  
+                  # Équipes non mappées
+                  unmapped = [team for team in fd_teams if team not in mapping]
+                  
+                  return mapping, match_details, unmapped
+              
+              def generate_mapping(self):
+                  """Génère le mapping complet"""
+                  print("🏁 Starting team mapping generation...")
+                  
+                  # Charger les sources FD
+                  with open('config/fd_sources.json', 'r') as f:
+                      sources = json.load(f)["sources"]
+                  
+                  successful_leagues = 0
+                  
+                  for source in sources:
+                      league_code = source["league_code"]
+                      
+                      # Vérifier si la ligue est dans le mapping
+                      if league_code not in LEAGUE_CODE_TO_API_ID:
+                          print(f"⏭️  {league_code}: Not in league mapping")
+                          continue
+                      
+                      league_id = LEAGUE_CODE_TO_API_ID[league_code]
+                      if league_id is None:
+                          print(f"⏭️  {league_code}: League ID is None")
+                          continue
+                      
+                      # Vérifier si la ligue est autorisée
+                      league_name = None
+                      for name, id_val in ALLOWED_LEAGUES.items():
+                          if id_val == league_id:
+                              league_name = name
+                              break
+                      
+                      if not league_name:
+                          print(f"⏭️  {league_code}: League ID {league_id} not in allowed leagues")
+                          continue
+                      
+                      print(f"\n🏆 Processing {league_code} - {league_name} (ID: {league_id})")
+                      
+                      # Récupérer les données
+                      api_teams = self.get_league_standings(league_id)
+                      fd_teams = self.get_fd_teams(source["url"])
+                      
+                      if not api_teams:
+                          print(f"    ❌ No API teams found")
+                          self.report["leagues"][league_code] = {
+                              "name": league_name,
+                              "id": league_id,
+                              "status": "failed_api",
+                              "error": "No teams found via API"
+                          }
+                          continue
+                      
+                      if not fd_teams:
+                          print(f"    ❌ No FD teams found")
+                          self.report["leagues"][league_code] = {
+                              "name": league_name,
+                              "id": league_id,
+                              "status": "failed_fd",
+                              "error": "No teams found in FD CSV"
+                          }
+                          continue
+                      
+                      # Créer le mapping
+                      mapping, match_details, unmapped = self.match_teams(fd_teams, api_teams, league_name)
+                      
+                      if mapping:
+                          self.team_mapping[str(league_id)] = mapping
+                          successful_leagues += 1
+                          
+                          # Statistiques pour cette ligue
+                          success_rate = len(mapping) / len(fd_teams) * 100
+                          
+                          self.report["leagues"][league_code] = {
+                              "name": league_name,
+                              "id": league_id,
+                              "status": "success",
+                              "fd_teams_count": len(fd_teams),
+                              "api_teams_count": len(api_teams),
+                              "mapped_teams_count": len(mapping),
+                              "success_rate": round(success_rate, 1),
+                              "match_details": match_details,
+                              "api_teams": [{"name": t["name"], "id": t["id"]} for t in api_teams]
+                          }
+                          
+                          if unmapped:
+                              self.report["unmapped_teams"][league_code] = unmapped
+                          
+                          print(f"    ✅ {len(mapping)}/{len(fd_teams)} teams mapped ({success_rate:.1f}%)")
+                          
+                          if unmapped:
+                              print(f"    ⚠️  Unmapped: {unmapped}")
+                      else:
+                          print(f"    ❌ No mapping possible")
+                          self.report["leagues"][league_code] = {
+                              "name": league_name,
+                              "id": league_id,
+                              "status": "no_mapping",
+                              "fd_teams_count": len(fd_teams),
+                              "api_teams_count": len(api_teams),
+                              "fd_teams": fd_teams,
+                              "api_teams": [{"name": t["name"], "id": t["id"]} for t in api_teams]
+                          }
+                  
+                  # Finaliser le rapport
+                  self.report["metadata"]["total_leagues_processed"] = successful_leagues
+                  self.report["metadata"]["total_teams_mapped"] = sum(len(teams) for teams in self.team_mapping.values())
+                  
+                  total_leagues = len([l for l in self.report["leagues"].values() if l["status"] != "failed_api"])
+                  if total_leagues > 0:
+                      self.report["metadata"]["success_rate"] = round(successful_leagues / total_leagues * 100, 1)
+                  
+                  print(f"\n🎉 Generation completed:")
+                  print(f"   📊 {successful_leagues} leagues successfully processed")
+                  print(f"   🏟️  {self.report['metadata']['total_teams_mapped']} teams mapped")
+                  print(f"   📡 {self.report['metadata']['api_calls_made']} API calls made")
+                  
+                  return self.team_mapping, self.report
+              
+              def save_outputs(self, output_format="both"):
+                  """Sauvegarde les résultats"""
+                  print(f"\n💾 Saving outputs (format: {output_format})...")
+                  
+                  # Créer le dossier output
+                  os.makedirs("output", exist_ok=True)
+                  
+                  files_created = []
+                  
+                  if output_format in ["json", "both"]:
+                      # Sauvegarder le mapping JSON
+                      mapping_file = "output/team_mapping.json"
+                      with open(mapping_file, 'w', encoding='utf-8') as f:
+                          json.dump(self.team_mapping, f, indent=2, ensure_ascii=False)
+                      files_created.append(mapping_file)
+                      
+                      # Sauvegarder le rapport détaillé
+                      report_file = "output/team_mapping_report.json"
+                      with open(report_file, 'w', encoding='utf-8') as f:
+                          json.dump(self.report, f, indent=2, ensure_ascii=False)
+                      files_created.append(report_file)
+                  
+                  if output_format in ["csv", "both"]:
+                      # Créer un CSV avec tous les mappings
+                      mapping_data = []
+                      for league_id, teams in self.team_mapping.items():
+                          league_info = None
+                          for code, info in self.report["leagues"].items():
+                              if str(info["id"]) == league_id:
+                                  league_info = info
+                                  break
+                          
+                          for fd_name, api_name in teams.items():
+                              # Trouver les détails du match
+                              match_detail = None
+                              if league_info and "match_details" in league_info:
+                                  for detail in league_info["match_details"]:
+                                      if detail["fd_team"] == fd_name:
+                                          match_detail = detail
+                                          break
+                              
+                              mapping_data.append({
+                                  "league_id": league_id,
+                                  "league_name": league_info["name"] if league_info else "Unknown",
+                                  "fd_team_name": fd_name,
+                                  "api_team_name": api_name,
+                                  "api_team_id": match_detail["api_team_id"] if match_detail else "",
+                                  "match_type": match_detail["match_type"] if match_detail else "",
+                                  "confidence": match_detail["confidence"] if match_detail else ""
+                              })
+                      
+                      mapping_csv = "output/team_mapping.csv"
+                      pd.DataFrame(mapping_data).to_csv(mapping_csv, index=False)
+                      files_created.append(mapping_csv)
+                      
+                      # CSV des équipes non mappées
+                      unmapped_data = []
+                      for league_code, teams in self.report["unmapped_teams"].items():
+                          league_info = self.report["leagues"][league_code]
+                          for team in teams:
+                              unmapped_data.append({
+                                  "league_code": league_code,
+                                  "league_name": league_info["name"],
+                                  "league_id": league_info["id"],
+                                  "fd_team_name": team
+                              })
+                      
+                      if unmapped_data:
+                          unmapped_csv = "output/unmapped_teams.csv"
+                          pd.DataFrame(unmapped_data).to_csv(unmapped_csv, index=False)
+                          files_created.append(unmapped_csv)
+                  
+                  return files_created
+          
+          # Exécution
+          if __name__ == "__main__":
+              season = int(os.getenv("SEASON", "2024"))
+              output_format = os.getenv("OUTPUT_FORMAT", "both")
+              
+              generator = TeamMappingGenerator(season=season)
+              mapping, report = generator.generate_mapping()
+              files_created = generator.save_outputs(output_format)
+              
+              print(f"\n📁 Files created: {files_created}")
+          EOF
+          
+          # Exécuter le script
+          python -u scripts/generate_team_mapping_report.py
+
+      - name: Generate markdown report
+        run: |
+          echo "📝 Generating markdown report..."
+          
+          python -c "
+          import json
+          import os
+          from datetime import datetime
+          
+          # Charger le rapport
+          with open('output/team_mapping_report.json', 'r') as f:
+              report = json.load(f)
+          
+          # Générer le rapport markdown
+          md_content = []
+          md_content.append('# 🏆 Team Mapping Generation Report')
+          md_content.append('')
+          md_content.append(f'**Generated:** {report[\"metadata\"][\"generated_at\"]}')
+          md_content.append(f'**Season:** {report[\"metadata\"][\"season\"]}')
+          md_content.append('')
+          
+          # Résumé
+          md_content.append('## 📊 Summary')
+          md_content.append('')
+          md_content.append(f'- **Leagues processed:** {report[\"metadata\"][\"total_leagues_processed\"]}')
+          md_content.append(f'- **Teams mapped:** {report[\"metadata\"][\"total_teams_mapped\"]}')
+          md_content.append(f'- **API calls made:** {report[\"metadata\"][\"api_calls_made\"]}')
+          md_content.append(f'- **Success rate:** {report[\"metadata\"][\"success_rate\"]}%')
+          md_content.append('')
+          
+          # Détail par ligue
+          md_content.append('## 🏟️ League Details')
+          md_content.append('')
+          md_content.append('| League | Status | FD Teams | API Teams | Mapped | Success Rate |')
+          md_content.append('|--------|--------|----------|-----------|--------|--------------|')
+          
+          for code, info in report['leagues'].items():
+              status_emoji = '✅' if info['status'] == 'success' else '❌'
+              fd_count = info.get('fd_teams_count', 0)
+              api_count = info.get('api_teams_count', 0)
+              mapped_count = info.get('mapped_teams_count', 0)
+              success_rate = info.get('success_rate', 0)
+              
+              md_content.append(f'| {code} ({info[\"name\"]}) | {status_emoji} {info[\"status\"]} | {fd_count} | {api_count} | {mapped_count} | {success_rate}% |')
+          
+          md_content.append('')
+          
+          # Équipes non mappées
+          if report.get('unmapped_teams'):
+              md_content.append('## ⚠️ Unmapped Teams')
+              md_content.append('')
+              for league_code, teams in report['unmapped_teams'].items():
+                  league_name = report['leagues'][league_code]['name']
+                  md_content.append(f'### {league_code} - {league_name}')
+                  for team in teams:
+                      md_content.append(f'- {team}')
+                  md_content.append('')
+          
+          # Erreurs
+          if report.get('errors'):
+              md_content.append('## ❌ Errors')
+              md_content.append('')
+              for error in report['errors']:
+                  md_content.append(f'- {error}')
+              md_content.append('')
+          
+          # Exemples de mapping
+          md_content.append('## 🔗 Mapping Examples')
+          md_content.append('')
+          example_count = 0
+          for code, info in report['leagues'].items():
+              if info['status'] == 'success' and 'match_details' in info and example_count < 3:
+                  md_content.append(f'### {code} - {info[\"name\"]}')
+                  md_content.append('')
+                  md_content.append('| FD Team | API Team | Match Type | Confidence |')
+                  md_content.append('|---------|----------|------------|------------|')
+                  
+                  for detail in info['match_details'][:5]:  # Premiers 5
+                      md_content.append(f'| {detail[\"fd_team\"]} | {detail[\"api_team\"]} | {detail[\"match_type\"]} | {detail[\"confidence\"]} |')
+                  
+                  md_content.append('')
+                  example_count += 1
+          
+          # Fichiers générés
+          md_content.append('## 📁 Generated Files')
+          md_content.append('')
+          
+          files = []
+          if os.path.exists('output/team_mapping.json'):
+              files.append('- `team_mapping.json` - Main mapping dictionary')
+          if os.path.exists('output/team_mapping_report.json'):
+              files.append('- `team_mapping_report.json` - Detailed JSON report')
+          if os.path.exists('output/team_mapping.csv'):
+              files.append('- `team_mapping.csv` - Mapping in CSV format')
+          if os.path.exists('output/unmapped_teams.csv'):
+              files.append('- `unmapped_teams.csv` - List of unmapped teams')
+          
+          md_content.extend(files)
+          md_content.append('')
+          
+          # Instructions d'utilisation
+          md_content.append('## 🚀 Usage Instructions')
+          md_content.append('')
+          md_content.append('1. Download the \`team_mapping.json\` file')
+          md_content.append('2. Place it in your \`config/\` directory')
+          md_content.append('3. Use it in your scripts to map Football Data UK team names to API team names')
+          md_content.append('')
+          md_content.append('Example usage in Python:')
+          md_content.append('```python')
+          md_content.append('import json')
+          md_content.append('')
+          md_content.append('with open(\"config/team_mapping.json\", \"r\") as f:')
+          md_content.append('    mapping = json.load(f)')
+          md_content.append('')
+          md_content.append('# Get API team name for a specific league')
+          md_content.append('league_id = \"39\"  # Premier League')
+          md_content.append('fd_team_name = \"Arsenal\"')
+          md_content.append('api_team_name = mapping[league_id][fd_team_name]')
+          md_content.append('```')
+          
+          # Sauvegarder le rapport markdown
+          with open('output/TEAM_MAPPING_REPORT.md', 'w', encoding='utf-8') as f:
+              f.write('\\n'.join(md_content))
+          
+          print('✅ Markdown report generated')
+          "
+
+      - name: Create artifacts summary
+        run: |
+          echo "## 📋 Team Mapping Generation Completed" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "output/team_mapping_report.json" ]; then
+              LEAGUES_COUNT=$(python -c "
+              import json
+              with open('output/team_mapping_report.json', 'r') as f:
+                  report = json.load(f)
+              print(report['metadata']['total_leagues_processed'])
+              ")
+              
+              TEAMS_COUNT=$(python -c "
+              import json
+              with open('output/team_mapping_report.json', 'r') as f:
+                  report = json.load(f)
+              print(report['metadata']['total_teams_mapped'])
+              ")
+              
+              API_CALLS=$(python -c "
+              import json
+              with open('output/team_mapping_report.json', 'r') as f:
+                  report = json.load(f)
+              print(report['metadata']['api_calls_made'])
+              ")
+              
+              SUCCESS_RATE=$(python -c "
+              import json
+              with open('output/team_mapping_report.json', 'r') as f:
+                  report = json.load(f)
+              print(report['metadata']['success_rate'])
+              ")
+              
+              echo "✅ **Status:** Generation completed successfully" >> $GITHUB_STEP_SUMMARY
+              echo "📊 **Leagues processed:** $LEAGUES_COUNT" >> $GITHUB_STEP_SUMMARY
+              echo "🏟️ **Teams mapped:** $TEAMS_COUNT" >> $GITHUB_STEP_SUMMARY
+              echo "📡 **API calls made:** $API_CALLS" >> $GITHUB_STEP_SUMMARY
+              echo "🎯 **Success rate:** $SUCCESS_RATE%" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "📁 **Generated files:**" >> $GITHUB_STEP_SUMMARY
+              
+              for file in output/*; do
+                  if [ -f "$file" ]; then
+                      filename=$(basename "$file")
+                      filesize=$(ls -lh "$file" | awk '{print $5}')
+                      echo "- \`$filename\` ($filesize)" >> $GITHUB_STEP_SUMMARY
+                  fi
+              done
+          else
+              echo "❌ **Status:** Generation failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: team-mapping-results
+          path: output/
+          retention-days: 30
+
+      - name: Commit results (optional)
+        run: |
+          if [ "${{ github.event.inputs.commit_results }}" == "true" ]; then
+              git config --global user.name "github-actions[bot]"
+              git config --global user.email "github-actions[bot]@users.noreply.github.com"
+              
+              # Copier le mapping principal vers config
+              cp output/team_mapping.json config/team_mapping.json
+              
+              git add config/team_mapping.json output/
+              git commit -m "📋 Generate team mapping for season ${{ inputs.season }} [skip ci]" || echo "No changes to commit"
+              git push || echo "Push failed"
+          else
+              echo "ℹ️ Results not committed to repository (download artifacts instead)"
+          fi
