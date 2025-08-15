@@ -31,67 +31,138 @@ class Database:
 
     def _init_db(self):
         with self._get_connection() as conn:
-            # 1) Crée la table matches minimale si absente (sans forcer de colonnes)
-            conn.execute("CREATE TABLE IF NOT EXISTS matches (id INTEGER PRIMARY KEY AUTOINCREMENT)")
-            cols = self._columns(conn, "matches")
-
-            # 2) Créer les index **seulement si** les colonnes existent déjà
-            if "date" in cols:
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_matches_date ON matches(date)")
-
-            team_cols_pair: Optional[Tuple[str, str]] = None
-            if "home_team" in cols and "away_team" in cols:
-                team_cols_pair = ("home_team", "away_team")
-            elif "home_team_id" in cols and "away_team_id" in cols:
-                team_cols_pair = ("home_team_id", "away_team_id")
-
-            if team_cols_pair:
-                conn.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_matches_teams ON matches({team_cols_pair[0]}, {team_cols_pair[1]})"
+            # 1) Crée la table matches avec le schéma complet nécessaire
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS matches (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    fixture_id TEXT,
+                    date TEXT,
+                    home_team TEXT,
+                    away_team TEXT,
+                    home_team_id TEXT,
+                    away_team_id TEXT,
+                    home_score INTEGER,
+                    away_score INTEGER,
+                    goals_home INTEGER,
+                    goals_away INTEGER,
+                    status TEXT,
+                    status_short TEXT,
+                    league TEXT,
+                    league_id INTEGER,
+                    season TEXT
                 )
+            """)
 
-            # 3) Tables annexes (créées si absentes, on ne touche pas aux existantes)
+            # 2) Créer les index
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_matches_date ON matches(date)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_matches_fixture_id ON matches(fixture_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_matches_teams ON matches(home_team, away_team)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_matches_team_ids ON matches(home_team_id, away_team_id)")
+
+            # 3) Tables annexes
             conn.execute("""
-            CREATE TABLE IF NOT EXISTS team_stats (
-              team_id    TEXT PRIMARY KEY,
-              elo        REAL,
-              updated_at TEXT
-            )
+                CREATE TABLE IF NOT EXISTS team_stats (
+                    team_id TEXT PRIMARY KEY,
+                    elo REAL,
+                    updated_at TEXT DEFAULT (datetime('now'))
+                )
             """)
 
             conn.execute("""
-            CREATE TABLE IF NOT EXISTS odds (
-              fixture_id     TEXT,
-              bookmaker_id   TEXT,
-              bookmaker_name TEXT,
-              home_odd       REAL,
-              draw_odd       REAL,
-              away_odd       REAL,
-              btts_yes       REAL,
-              btts_no        REAL,
-              ou_over25      REAL,
-              ou_under25     REAL,
-              updated_at     TEXT,
-              PRIMARY KEY (fixture_id, bookmaker_id)
-            )
+                CREATE TABLE IF NOT EXISTS teams (
+                    team_id INTEGER PRIMARY KEY,
+                    name TEXT,
+                    league_id INTEGER,
+                    created_at TEXT DEFAULT (datetime('now'))
+                )
             """)
 
             conn.execute("""
-            CREATE TABLE IF NOT EXISTS predictions (
-              id         INTEGER PRIMARY KEY AUTOINCREMENT,
-              fixture_id TEXT,
-              date       TEXT,
-              league     TEXT,
-              home_team  TEXT,
-              away_team  TEXT,
-              method     TEXT,
-              market     TEXT,
-              selection  TEXT,
-              prob       REAL,
-              odd        REAL,
-              value      REAL,
-              created_at TEXT
-            )
+                CREATE TABLE IF NOT EXISTS odds (
+                    fixture_id TEXT,
+                    bookmaker_id TEXT,
+                    bookmaker_name TEXT,
+                    home_odd REAL,
+                    draw_odd REAL,
+                    away_odd REAL,
+                    btts_yes REAL,
+                    btts_no REAL,
+                    ou_over25 REAL,
+                    ou_under25 REAL,
+                    updated_at TEXT DEFAULT (datetime('now')),
+                    PRIMARY KEY (fixture_id, bookmaker_id)
+                )
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS predictions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    fixture_id TEXT,
+                    date TEXT,
+                    league TEXT,
+                    home_team TEXT,
+                    away_team TEXT,
+                    method TEXT,
+                    market TEXT,
+                    selection TEXT,
+                    prob REAL,
+                    odd REAL,
+                    value REAL,
+                    created_at TEXT
+                )
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS match_elo (
+                    fixture_id TEXT PRIMARY KEY,
+                    home_pre_elo REAL,
+                    away_pre_elo REAL,
+                    home_post_elo REAL,
+                    away_post_elo REAL,
+                    home_win_prob REAL,
+                    draw_prob REAL,
+                    away_win_prob REAL,
+                    created_at TEXT DEFAULT (datetime('now'))
+                )
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS method_stats (
+                    fixture_id INTEGER,
+                    method TEXT,
+                    sample_size INTEGER,
+                    home_win_pct REAL,
+                    draw_pct REAL,
+                    away_win_pct REAL,
+                    over25_pct REAL,
+                    btts_yes_pct REAL,
+                    created_at TEXT DEFAULT (datetime('now')),
+                    PRIMARY KEY (fixture_id, method)
+                )
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS ou25_odds (
+                    fixture_id INTEGER,
+                    bookmaker_id INTEGER,
+                    bookmaker_name TEXT,
+                    over25_odd REAL,
+                    under25_odd REAL,
+                    updated_at TEXT DEFAULT (datetime('now')),
+                    PRIMARY KEY (fixture_id, bookmaker_id)
+                )
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS btts_odds (
+                    fixture_id INTEGER,
+                    bookmaker_id INTEGER,
+                    bookmaker_name TEXT,
+                    yes_odd REAL,
+                    no_odd REAL,
+                    updated_at TEXT DEFAULT (datetime('now')),
+                    PRIMARY KEY (fixture_id, bookmaker_id)
+                )
             """)
 
             conn.commit()
@@ -143,6 +214,8 @@ class Database:
                 values["away_team_id"] = str(away_team)
             if "home_score" in cols:  values["home_score"] = home_score
             if "away_score" in cols:  values["away_score"] = away_score
+            if "goals_home" in cols:  values["goals_home"] = home_score
+            if "goals_away" in cols:  values["goals_away"] = away_score
             if "status" in cols:      values["status"] = status
             if "league" in cols:      values["league"] = league
             if "league_id" in cols and "league" not in values:
