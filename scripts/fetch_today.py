@@ -357,17 +357,4 @@ def main():
         return 1
 
 if __name__ == "__main__":
-    exit(main())        total_teams = conn.execute("SELECT COUNT(*) FROM teams").fetchone()[0]
-            print(f"📈 Total matches in DB: {total_matches:,}")
-            print(f"👥 Total teams in DB: {total_teams:,}")
-        
-        return 0 if total_inserted > 0 else 1
-        
-    except Exception as e:
-        print(f"💥 Fatal error: {e}")
-        import traceback
-        traceback.print_exc()
-        return 1
-
-if __name__ == "__main__":
     exit(main())
