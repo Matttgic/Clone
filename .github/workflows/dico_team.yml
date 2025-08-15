@@ -330,21 +330,23 @@ jobs:
         run: |
           echo "📝 Creating simple report..."
           
-          if [ -f "output/team_mapping_report.json" ]; then
-              python -c "
-              import json
-              
+          # Créer un script Python séparé pour éviter les problèmes d'indentation
+          cat > create_report.py << 'EOF'
+          import json
+          import os
+          
+          if os.path.exists('output/team_mapping_report.json'):
               with open('output/team_mapping_report.json', 'r') as f:
                   report = json.load(f)
               
               md_lines = []
               md_lines.append('# 🏆 Team Mapping Report')
               md_lines.append('')
-              md_lines.append(f'**Generated:** {report[\"metadata\"][\"generated_at\"]}')
-              md_lines.append(f'**Season:** {report[\"metadata\"][\"season\"]}')
-              md_lines.append(f'**Leagues processed:** {report[\"metadata\"][\"total_leagues_processed\"]}')
-              md_lines.append(f'**Teams mapped:** {report[\"metadata\"][\"total_teams_mapped\"]}')
-              md_lines.append(f'**API calls:** {report[\"metadata\"][\"api_calls_made\"]}')
+              md_lines.append(f'**Generated:** {report["metadata"]["generated_at"]}')
+              md_lines.append(f'**Season:** {report["metadata"]["season"]}')
+              md_lines.append(f'**Leagues processed:** {report["metadata"]["total_leagues_processed"]}')
+              md_lines.append(f'**Teams mapped:** {report["metadata"]["total_teams_mapped"]}')
+              md_lines.append(f'**API calls:** {report["metadata"]["api_calls_made"]}')
               md_lines.append('')
               
               if report.get('errors'):
@@ -357,18 +359,23 @@ jobs:
                   md_lines.append('## 📊 Leagues')
                   for code, info in report['leagues'].items():
                       status = '✅' if info['status'] == 'success' else '❌'
-                      md_lines.append(f'- {status} **{code}** ({info[\"name\"]})')
+                      md_lines.append(f'- {status} **{code}** ({info["name"]})')
+                      if info['status'] == 'success':
+                          md_lines.append(f'  - Teams mapped: {info.get("mapped_teams", 0)}')
               
               with open('output/REPORT.md', 'w') as f:
-                  f.write('\\n'.join(md_lines))
+                  f.write('\n'.join(md_lines))
               
               print('✅ Report created')
-              "
-          else
-              echo "❌ No report file found, creating error report"
-              echo "# ❌ Team Mapping Failed" > output/REPORT.md
-              echo "The team mapping generation failed. Check the workflow logs for details." >> output/REPORT.md
-          fi
+          else:
+              print('❌ No report file found, creating error report')
+              with open('output/REPORT.md', 'w') as f:
+                  f.write('# ❌ Team Mapping Failed\n\n')
+                  f.write('The team mapping generation failed. Check the workflow logs for details.\n')
+          EOF
+          
+          python create_report.py
+          rm create_report.py
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -383,27 +390,33 @@ jobs:
         run: |
           echo "## 📋 Team Mapping Summary" >> $GITHUB_STEP_SUMMARY
           
-          if [ -f "output/team_mapping_report.json" ]; then
-              LEAGUES=$(python -c "
-              import json
+          # Créer un script pour éviter les problèmes d'indentation
+          cat > summary_script.py << 'EOF'
+          import json
+          import os
+          
+          if os.path.exists('output/team_mapping_report.json'):
               try:
                   with open('output/team_mapping_report.json', 'r') as f:
                       report = json.load(f)
-                  print(report['metadata']['total_leagues_processed'])
+                  print(f"LEAGUES={report['metadata']['total_leagues_processed']}")
+                  print(f"TEAMS={report['metadata']['total_teams_mapped']}")
+                  print(f"STATUS=success")
               except:
-                  print('0')
-              ")
-              
-              TEAMS=$(python -c "
-              import json
-              try:
-                  with open('output/team_mapping_report.json', 'r') as f:
-                      report = json.load(f)
-                  print(report['metadata']['total_teams_mapped'])
-              except:
-                  print('0')
-              ")
-              
+                  print("LEAGUES=0")
+                  print("TEAMS=0")
+                  print("STATUS=failed")
+          else:
+              print("LEAGUES=0")
+              print("TEAMS=0")
+              print("STATUS=failed")
+          EOF
+          
+          # Exécuter le script et capturer les variables
+          eval $(python summary_script.py)
+          rm summary_script.py
+          
+          if [ "$STATUS" = "success" ]; then
               echo "✅ **Status:** Completed" >> $GITHUB_STEP_SUMMARY
               echo "📊 **Leagues:** $LEAGUES" >> $GITHUB_STEP_SUMMARY
               echo "🏟️ **Teams:** $TEAMS" >> $GITHUB_STEP_SUMMARY
@@ -423,4 +436,4 @@ jobs:
               done
           else
               echo "- No files generated" >> $GITHUB_STEP_SUMMARY
-          fi
+          fi 
