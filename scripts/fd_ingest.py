@@ -1,138 +1,242 @@
-import os
 import re
 import pandas as pd
+import requests
+from io import StringIO
+from datetime import datetime
 from src.models.database import db
 
-DATA_DIR = "data"
-
-# 🔹 Tous les fichiers CSV à ingérer
-CSV_FILES = {
-    # Top Leagues Europe (format EU)
+# ===== Ligues Europe : codes mmz4281/2425 =====
+EUROPEAN_FILES = {
+    # Angleterre
     "E0": "https://www.football-data.co.uk/mmz4281/2425/E0.csv",  # Premier League
     "E1": "https://www.football-data.co.uk/mmz4281/2425/E1.csv",  # Championship
+
+    # Allemagne
     "D1": "https://www.football-data.co.uk/mmz4281/2425/D1.csv",  # Bundesliga
     "D2": "https://www.football-data.co.uk/mmz4281/2425/D2.csv",  # 2. Bundesliga
+
+    # Italie
     "I1": "https://www.football-data.co.uk/mmz4281/2425/I1.csv",  # Serie A
     "I2": "https://www.football-data.co.uk/mmz4281/2425/I2.csv",  # Serie B
+
+    # Espagne
     "SP1": "https://www.football-data.co.uk/mmz4281/2425/SP1.csv",  # La Liga
-    "SP2": "https://www.football-data.co.uk/mmz4281/2425/SP2.csv",  # La Liga 2
+    "SP2": "https://www.football-data.co.uk/mmz4281/2425/SP2.csv",  # Segunda
+
+    # France
     "F1": "https://www.football-data.co.uk/mmz4281/2425/F1.csv",  # Ligue 1
     "F2": "https://www.football-data.co.uk/mmz4281/2425/F2.csv",  # Ligue 2
-    "N1": "https://www.football-data.co.uk/mmz4281/2425/N1.csv",  # Eredivisie
-    "B1": "https://www.football-data.co.uk/mmz4281/2425/B1.csv",  # Jupiler Pro League
-    "P1": "https://www.football-data.co.uk/mmz4281/2425/P1.csv",  # Primeira Liga
-    "T1": "https://www.football-data.co.uk/mmz4281/2425/T1.csv",  # Super Lig
-    "G1": "https://www.football-data.co.uk/mmz4281/2425/G1.csv",  # Super League Greece
 
-    # Worldwide leagues (format WW)
-    "ARG": "https://www.football-data.co.uk/new/ARG.csv",  # Argentine
-    "AUT": "https://www.football-data.co.uk/new/AUT.csv",  # Autriche
-    "BRA": "https://www.football-data.co.uk/new/BRA.csv",  # Brésil
-    "DNK": "https://www.football-data.co.uk/new/DNK.csv",  # Danemark
-    "CHN": "https://www.football-data.co.uk/new/CHN.csv",  # Chine
-    "FIN": "https://www.football-data.co.uk/new/FIN.csv",  # Finlande
-    "IRL": "https://www.football-data.co.uk/new/IRL.csv",  # Irlande
-    "JPN": "https://www.football-data.co.uk/new/JPN.csv",  # Japon
-    "MEX": "https://www.football-data.co.uk/new/MEX.csv",  # Mexique
-    "NOR": "https://www.football-data.co.uk/new/NOR.csv",  # Norvège
-    "POL": "https://www.football-data.co.uk/new/POL.csv",  # Pologne
-    "ROU": "https://www.football-data.co.uk/new/ROU.csv",  # Roumanie
-    "SWE": "https://www.football-data.co.uk/new/SWE.csv",  # Suède
-    "SWZ": "https://www.football-data.co.uk/new/SWZ.csv",  # Suisse
-    "USA": "https://www.football-data.co.uk/new/USA.csv",  # MLS
+    # Pays-Bas
+    "N1": "https://www.football-data.co.uk/mmz4281/2425/N1.csv",  # Eredivisie
+
+    # Belgique
+    "B1": "https://www.football-data.co.uk/mmz4281/2425/B1.csv",  # Jupiler Pro League
+
+    # Portugal
+    "P1": "https://www.football-data.co.uk/mmz4281/2425/P1.csv",  # Primeira Liga
+
+    # Turquie
+    "T1": "https://www.football-data.co.uk/mmz4281/2425/T1.csv",  # Süper Lig
+
+    # Grèce
+    "G1": "https://www.football-data.co.uk/mmz4281/2425/G1.csv",  # Super League
 }
 
-def find_col(df, patterns):
-    """Trouve une colonne correspondant à un des patterns."""
-    for patt in patterns:
-        for c in df.columns:
-            if isinstance(patt, str) and patt.lower() == c.lower():
-                return c
-            if hasattr(patt, "search") and patt.search(c):
-                return c
+# ===== Ligues Monde : fichiers "new" (format Worldwide) =====
+WORLD_FILES = {
+    "ARG": "https://www.football-data.co.uk/new/ARG.csv",
+    "AUT": "https://www.football-data.co.uk/new/AUT.csv",
+    "BRA": "https://www.football-data.co.uk/new/BRA.csv",
+    "DNK": "https://www.football-data.co.uk/new/DNK.csv",
+    "CHN": "https://www.football-data.co.uk/new/CHN.csv",
+    "FIN": "https://www.football-data.co.uk/new/FIN.csv",
+    "IRL": "https://www.football-data.co.uk/new/IRL.csv",
+    "JPN": "https://www.football-data.co.uk/new/JPN.csv",
+    "MEX": "https://www.football-data.co.uk/new/MEX.csv",
+    "NOR": "https://www.football-data.co.uk/new/NOR.csv",
+    "POL": "https://www.football-data.co.uk/new/POL.csv",
+    "ROU": "https://www.football-data.co.uk/new/ROU.csv",
+    "SWE": "https://www.football-data.co.uk/new/SWE.csv",
+    "SWZ": "https://www.football-data.co.uk/new/SWZ.csv",
+    "USA": "https://www.football-data.co.uk/new/USA.csv",
+}
+
+def download_csv(url: str) -> pd.DataFrame:
+    print(f"▶ Téléchargement: {url}")
+    resp = requests.get(url)
+    resp.raise_for_status()
+    text = resp.text
+
+    # Certains CSV ont des BOM ou séparateurs ; pandas gère mais on force le sep pour sécurité
+    df = pd.read_csv(StringIO(text))
+    # Normalisation colonnes : strip / uniformiser
+    df.columns = [str(c).strip() for c in df.columns]
+    return df
+
+def parse_date(value: str) -> str:
+    """
+    Football-Data utilise souvent dd/mm/YY ou dd/mm/YYYY.
+    On tente plusieurs formats.
+    """
+    if pd.isna(value):
+        return None
+    s = str(value).strip()
+    for fmt in ("%d/%m/%Y", "%d/%m/%y"):
+        try:
+            return datetime.strptime(s, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    # fallback: pandas parse
+    try:
+        return pd.to_datetime(s, dayfirst=True).strftime("%Y-%m-%d")
+    except Exception:
+        return None
+
+def as_int(x):
+    try:
+        if pd.isna(x):
+            return None
+        return int(x)
+    except Exception:
+        return None
+
+def as_float(x):
+    try:
+        if pd.isna(x):
+            return None
+        return float(x)
+    except Exception:
+        return None
+
+def first_col(row, names):
+    """
+    Retourne la première valeur non nulle parmi une liste de noms de colonnes possibles.
+    """
+    for n in names:
+        if n in row and not pd.isna(row[n]):
+            return row[n]
     return None
 
-def parse_format_europe(df, code, season):
-    """Parsing pour les fichiers format Europe."""
-    date_col = find_col(df, ["Date"])
-    home_col = find_col(df, ["HomeTeam"])
-    away_col = find_col(df, ["AwayTeam"])
-    fthg_col = find_col(df, ["FTHG"])
-    ftag_col = find_col(df, ["FTAG"])
-    res_col = find_col(df, ["FTR"])
-    odds_home_col = find_col(df, ["B365H", "PSH"])
-    odds_draw_col = find_col(df, ["B365D", "PSD"])
-    odds_away_col = find_col(df, ["B365A", "PSA"])
-    btts_yes_col = find_col(df, [re.compile(r"BTTS.*Yes", re.I)])
-    btts_no_col = find_col(df, [re.compile(r"BTTS.*No", re.I)])
+def build_fixture_id(date, home, away):
+    if not date or not home or not away:
+        return None
+    # ID simple et stable
+    return f"{date}_{home}_vs_{away}"
 
+def build_odds_row_from_row(row) -> dict | None:
+    """
+    Essaie d'extraire un triplet (H/D/A) depuis différentes colonnes possibles.
+    Priorité: Closing (PSCH/PSCD/PSCA) -> B365 (B365H/B365D/B365A) -> Pinnacle (PH/PD/PA)
+    """
+    h = first_col(row, ["PSCH", "BbAvH", "B365H", "PH", "P>H", "AvgCH", "PSH"])
+    d = first_col(row, ["PSCD", "BbAvD", "B365D", "PD", "P>D", "AvgCD", "PSD"])
+    a = first_col(row, ["PSCA", "BbAvA", "B365A", "PA", "P>A", "AvgCA", "PSA"])
+
+    h_f, d_f, a_f = as_float(h), as_float(d), as_float(a)
+    if h_f and d_f and a_f:
+        # On note bookmaker "Closing" par défaut (c’est souvent Pinnacle Closing sur Football-Data)
+        return {
+            "bookmaker_id": "CLOSE",
+            "bookmaker_name": "Closing",
+            "home_odd": h_f,
+            "draw_odd": d_f,
+            "away_odd": a_f
+        }
+    return None
+
+def parse_format_europe(df: pd.DataFrame):
     for _, row in df.iterrows():
-        date = str(row[date_col]) if date_col else None
-        db.insert_match(
-            season=season,
-            league_code=code,
-            home=row[home_col] if home_col else None,
-            away=row[away_col] if away_col else None,
-            fthg=row[fthg_col] if fthg_col else None,
-            ftag=row[ftag_col] if ftag_col else None,
-            result=row[res_col] if res_col else None,
-            btts_yes=row[btts_yes_col] if btts_yes_col else None,
-            btts_no=row[btts_no_col] if btts_no_col else None,
-            odds_home=row[odds_home_col] if odds_home_col else None,
-            odds_draw=row[odds_draw_col] if odds_draw_col else None,
-            odds_away=row[odds_away_col] if odds_away_col else None,
-            date=date
-        )
+        try:
+            # Colonnes Europe classiques
+            date = parse_date(row.get("Date"))
+            home = row.get("HomeTeam")
+            away = row.get("AwayTeam")
+            hg = as_int(row.get("FTHG"))
+            ag = as_int(row.get("FTAG"))
 
-def parse_format_worldwide(df, code, season):
-    """Parsing pour les fichiers format Worldwide."""
-    date_col = find_col(df, ["Date"])
-    home_col = find_col(df, ["Home", "HomeTeam"])
-    away_col = find_col(df, ["Away", "AwayTeam"])
-    fthg_col = find_col(df, ["HG", "FTHG"])
-    ftag_col = find_col(df, ["AG", "FTAG"])
-    res_col = find_col(df, ["Res", "FTR"])
-    odds_home_col = find_col(df, ["PSCH", "B365H"])
-    odds_draw_col = find_col(df, ["PSCD", "B365D"])
-    odds_away_col = find_col(df, ["PSCA", "B365A"])
-    btts_yes_col = find_col(df, [re.compile(r"BTTS.*Yes", re.I)])
-    btts_no_col = find_col(df, [re.compile(r"BTTS.*No", re.I)])
+            if not date or not home or not away:
+                continue
 
+            status = "FT" if (hg is not None and ag is not None) else "NS"
+            fixture_id = build_fixture_id(date, home, away)
+            if not fixture_id:
+                continue
+
+            odds_list = []
+            odds_row = build_odds_row_from_row(row)
+            if odds_row:
+                odds_list.append(odds_row)
+
+            db.insert_match(
+                fixture_id=fixture_id,
+                date=date,
+                home_team=home,
+                away_team=away,
+                home_score=hg,
+                away_score=ag,
+                status=status,
+                odds=odds_list
+            )
+        except Exception as e:
+            print(f"[EU] Erreur parse: {e}")
+
+def parse_format_worldwide(df: pd.DataFrame):
     for _, row in df.iterrows():
-        date = str(row[date_col]) if date_col else None
-        db.insert_match(
-            season=season,
-            league_code=code,
-            home=row[home_col] if home_col else None,
-            away=row[away_col] if away_col else None,
-            fthg=row[fthg_col] if fthg_col else None,
-            ftag=row[ftag_col] if ftag_col else None,
-            result=row[res_col] if res_col else None,
-            btts_yes=row[btts_yes_col] if btts_yes_col else None,
-            btts_no=row[btts_no_col] if btts_no_col else None,
-            odds_home=row[odds_home_col] if odds_home_col else None,
-            odds_draw=row[odds_draw_col] if odds_draw_col else None,
-            odds_away=row[odds_away_col] if odds_away_col else None,
-            date=date
-        )
+        try:
+            # Colonnes Worldwide
+            date = parse_date(row.get("Date"))
+            home = row.get("Home")
+            away = row.get("Away")
+            hg = as_int(row.get("HG"))
+            ag = as_int(row.get("AG"))
+
+            if not date or not home or not away:
+                continue
+
+            status = "FT" if (hg is not None and ag is not None) else "NS"
+            fixture_id = build_fixture_id(date, home, away)
+            if not fixture_id:
+                continue
+
+            odds_list = []
+            odds_row = build_odds_row_from_row(row)
+            if odds_row:
+                odds_list.append(odds_row)
+
+            db.insert_match(
+                fixture_id=fixture_id,
+                date=date,
+                home_team=home,
+                away_team=away,
+                home_score=hg,
+                away_score=ag,
+                status=status,
+                odds=odds_list
+            )
+        except Exception as e:
+            print(f"[WW] Erreur parse: {e}")
 
 def main():
-    os.makedirs(DATA_DIR, exist_ok=True)
-    season = "2024-25"
-
-    for code, url in CSV_FILES.items():
-        print(f"▶ Téléchargement {code} {season}: {url}")
-        df = pd.read_csv(url)
-        df = df.dropna(how="all")
-
-        if "HomeTeam" in df.columns:
+    # Europe
+    for code, url in EUROPEAN_FILES.items():
+        try:
+            print(f"▶ Téléchargement {code} 2024-25: {url}")
+            df = download_csv(url)
             print(f"  ↳ Format détecté: EU ({code})")
-            parse_format_europe(df, code, season)
-        elif "Home" in df.columns:
+            parse_format_europe(df)
+        except Exception as e:
+            print(f"Erreur ingestion {code}: {e}")
+
+    # Monde
+    for code, url in WORLD_FILES.items():
+        try:
+            print(f"▶ Téléchargement {code} 2024-25: {url}")
+            df = download_csv(url)
             print(f"  ↳ Format détecté: WW ({code})")
-            parse_format_worldwide(df, code, season)
-        else:
-            print(f"❌ Format inconnu pour {code}, colonnes: {df.columns}")
+            parse_format_worldwide(df)
+        except Exception as e:
+            print(f"Erreur ingestion {code}: {e}")
 
 if __name__ == "__main__":
     main()
