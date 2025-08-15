@@ -1,22 +1,18 @@
-name: Generate Team Mapping (One-time)
+name: Generate Complete Team Mapping
 
 on:
   workflow_dispatch:
     inputs:
       season:
-        description: 'Season (YYYY format, e.g., 2024)'
+        description: 'Season (YYYY format)'
         required: false
         default: '2024'
         type: string
-      output_format:
-        description: 'Output format'
+      max_leagues:
+        description: 'Max leagues to process (0 = all)'
         required: false
-        default: 'both'
-        type: choice
-        options:
-          - 'json'
-          - 'csv' 
-          - 'both'
+        default: '0'
+        type: string
 
 permissions:
   contents: write
@@ -30,8 +26,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -43,74 +37,177 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Debug environment
-        run: |
-          echo "🔍 Debugging environment..."
-          echo "PYTHONPATH: $PYTHONPATH"
-          echo "Working directory: $(pwd)"
-          ls -la
-          echo "Config directory:"
-          ls -la config/ || echo "Config directory not found"
-          echo "Python version:"
-          python --version
-          echo "Installed packages:"
-          pip list | grep -E "(requests|pandas)"
-
-      - name: Test API connection
-        env:
-          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
-        run: |
-          echo "🔑 Testing API connection..."
-          python -c "
-          import requests
-          import os
-          from config.settings import Settings
-          
-          settings = Settings()
-          print(f'API KEY present: {bool(settings.API.API_KEY)}')
-          print(f'API KEY length: {len(settings.API.API_KEY) if settings.API.API_KEY else 0}')
-          
-          # Test simple API call
-          try:
-              url = f'{settings.API.BASE_URL}/leagues'
-              response = requests.get(url, headers=settings.API.headers)
-              print(f'API test response: {response.status_code}')
-              if response.status_code != 200:
-                  print(f'Response text: {response.text[:200]}')
-          except Exception as e:
-              print(f'API test error: {e}')
-          "
-
-      - name: Generate team mapping (simplified)
+      - name: Generate comprehensive team mapping
         env:
           RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
           SEASON: ${{ inputs.season }}
-          OUTPUT_FORMAT: ${{ inputs.output_format }}
+          MAX_LEAGUES: ${{ inputs.max_leagues }}
         run: |
-          echo "🚀 Starting team mapping generation..."
-          
-          # Créer le dossier output
           mkdir -p output
           
-          # Créer un script Python plus simple
-          cat > scripts/simple_team_mapping.py << 'EOF'
+          cat > scripts/comprehensive_team_mapping.py << 'EOF'
           import requests
           import pandas as pd
           import json
           import os
+          import time
           from datetime import datetime
           from difflib import SequenceMatcher
           from config.settings import Settings
           from config.leagues import ALLOWED_LEAGUES
           from config.league_mapping import LEAGUE_CODE_TO_API_ID
           
+          def normalize_team_name(name):
+              """Normalisation avancée des noms d'équipe"""
+              if not name or not isinstance(name, str):
+                  return ""
+              
+              # Mapping des équivalences connues
+              team_equivalents = {
+                  # Premier League
+                  "Man United": "Manchester United",
+                  "Man City": "Manchester City", 
+                  "Spurs": "Tottenham",
+                  "Leicester": "Leicester City",
+                  "Brighton": "Brighton & Hove Albion",
+                  "Wolves": "Wolverhampton Wanderers",
+                  "Newcastle": "Newcastle United",
+                  "West Ham": "West Ham United",
+                  "Sheffield United": "Sheffield Utd",
+                  
+                  # La Liga
+                  "Ath Madrid": "Atletico Madrid",
+                  "Ath Bilbao": "Athletic Bilbao",
+                  "Betis": "Real Betis",
+                  "Sociedad": "Real Sociedad",
+                  "Vallecano": "Rayo Vallecano",
+                  
+                  # Bundesliga
+                  "Bayern Munich": "Bayern München",
+                  "Dortmund": "Borussia Dortmund",
+                  "RB Leipzig": "RasenBallsport Leipzig",
+                  "Leverkusen": "Bayer Leverkusen",
+                  "M'gladbach": "Borussia Mönchengladbach",
+                  "Ein Frankfurt": "Eintracht Frankfurt",
+                  
+                  # Serie A
+                  "Inter": "Inter Milan",
+                  "AC Milan": "Milan",
+                  "Roma": "AS Roma",
+                  "Lazio": "SS Lazio",
+                  "Napoli": "SSC Napoli",
+                  
+                  # Ligue 1
+                  "Paris SG": "Paris Saint Germain",
+                  "Saint-Etienne": "AS Saint Etienne",
+                  "Marseille": "Olympique Marseille",
+                  "Lyon": "Olympique Lyonnais",
+              }
+              
+              # Vérifier les équivalences directes
+              if name in team_equivalents:
+                  name = team_equivalents[name]
+              
+              # Normalisation générale
+              replacements = [
+                  # Préfixes/suffixes courants
+                  ("FC ", ""), (" FC", ""), ("CF ", ""), (" CF", ""),
+                  ("AC ", ""), (" AC", ""), ("SC ", ""), (" SC", ""),
+                  ("AS ", ""), (" AS", ""), ("CD ", ""), (" CD", ""),
+                  ("SK ", ""), (" SK", ""), ("FK ", ""), (" FK", ""),
+                  ("1. ", ""), ("2. ", ""), ("SV ", ""), (" SV", ""),
+                  ("Real ", ""), ("Club ", ""), ("Deportivo ", ""),
+                  
+                  # Caractères spéciaux
+                  ("ü", "u"), ("ö", "o"), ("ä", "a"), ("ß", "ss"),
+                  ("é", "e"), ("è", "e"), ("ê", "e"), ("ë", "e"),
+                  ("à", "a"), ("á", "a"), ("â", "a"), ("ã", "a"),
+                  ("ç", "c"), ("ñ", "n"), ("ø", "o"), ("å", "a"),
+                  
+                  # Mots courants
+                  ("Saint ", "St "), ("Saint-", "St-"),
+                  ("Athletic ", ""), ("Atletico ", "Atletico "),
+                  ("Borussia ", ""), ("Olympique ", ""),
+                  
+                  # Espaces multiples
+                  ("  ", " "), ("   ", " "),
+              ]
+              
+              normalized = name
+              for old, new in replacements:
+                  normalized = normalized.replace(old, new)
+              
+              return normalized.strip()
+          
+          def similarity_score(name1, name2):
+              """Calcule un score de similarité avancé"""
+              if not name1 or not name2:
+                  return 0.0
+              
+              # Normaliser les deux noms
+              norm1 = normalize_team_name(name1).lower()
+              norm2 = normalize_team_name(name2).lower()
+              
+              # Score exact après normalisation
+              if norm1 == norm2:
+                  return 1.0
+              
+              # Score de similarité de base
+              base_score = SequenceMatcher(None, norm1, norm2).ratio()
+              
+              # Bonus si un nom contient l'autre
+              if norm1 in norm2 or norm2 in norm1:
+                  base_score = max(base_score, 0.85)
+              
+              # Bonus pour les mots en commun
+              words1 = set(norm1.split())
+              words2 = set(norm2.split())
+              if words1 and words2:
+                  common_words = len(words1.intersection(words2))
+                  total_words = len(words1.union(words2))
+                  word_score = common_words / total_words
+                  base_score = max(base_score, word_score * 0.9)
+              
+              return base_score
+          
+          def match_teams_advanced(fd_teams, api_teams):
+              """Matching avancé des équipes"""
+              matches = []
+              unmatched_fd = []
+              
+              for fd_team in fd_teams:
+                  best_match = None
+                  best_score = 0.0
+                  best_api_team = None
+                  
+                  for api_team in api_teams:
+                      score = similarity_score(fd_team, api_team["name"])
+                      if score > best_score:
+                          best_score = score
+                          best_match = api_team["name"]
+                          best_api_team = api_team
+                  
+                  # Seuil de confiance plus bas mais avec validation
+                  if best_score >= 0.7:  # Abaissé de 0.75 à 0.7
+                      matches.append({
+                          "fd_team": fd_team,
+                          "api_team": best_match,
+                          "api_team_id": best_api_team["id"],
+                          "confidence": round(best_score, 3),
+                          "match_type": "exact" if best_score >= 0.95 else "similarity"
+                      })
+                  else:
+                      unmatched_fd.append(fd_team)
+              
+              return matches, unmatched_fd
+          
           def main():
-              print("🏁 Starting team mapping generation...")
+              print("🏁 Starting comprehensive team mapping generation...")
               
               settings = Settings()
               season = int(os.getenv("SEASON", "2024"))
+              max_leagues = int(os.getenv("MAX_LEAGUES", "0"))
               
-              # Rapport de base
               report = {
                   "metadata": {
                       "generated_at": datetime.now().isoformat(),
@@ -121,12 +218,14 @@ jobs:
                       "success_rate": 0.0
                   },
                   "leagues": {},
+                  "mapping_summary": {},
+                  "unmatched_teams": {},
                   "errors": []
               }
               
               team_mapping = {}
               
-              # Charger les sources FD
+              # Charger les sources
               try:
                   with open('config/fd_sources.json', 'r') as f:
                       sources = json.load(f)["sources"]
@@ -136,13 +235,16 @@ jobs:
                   report["errors"].append(f"Error loading sources: {e}")
                   return team_mapping, report
               
+              # Limiter si demandé
+              if max_leagues > 0:
+                  sources = sources[:max_leagues]
+                  print(f"🔢 Limited to {len(sources)} leagues for testing")
+              
               successful_leagues = 0
               
-              # Traiter seulement les premiers pour le test
-              for i, source in enumerate(sources[:5]):  # Limite à 5 pour le test
+              for i, source in enumerate(sources):
                   league_code = source["league_code"]
-                  
-                  print(f"\n🏆 Processing {i+1}/5: {league_code}")
+                  print(f"\n🏆 Processing {i+1}/{len(sources)}: {league_code}")
                   
                   # Vérifications
                   if league_code not in LEAGUE_CODE_TO_API_ID:
@@ -166,6 +268,10 @@ jobs:
                       continue
                   
                   try:
+                      # Petit délai pour éviter les rate limits
+                      if i > 0:
+                          time.sleep(0.5)
+                      
                       # API call pour les standings
                       print(f"    📡 Getting standings for league {league_id}")
                       url = f"{settings.API.BASE_URL}/standings"
@@ -213,33 +319,45 @@ jobs:
                       fd_teams = [team for team in fd_teams if team and str(team).strip()]
                       print(f"    ✅ {len(fd_teams)} FD teams found")
                       
-                      # Simple mapping (exact match only pour simplifier)
-                      mapping = {}
-                      for fd_team in fd_teams:
-                          for api_team in api_teams:
-                              if fd_team.lower().replace(" ", "") == api_team["name"].lower().replace(" ", ""):
-                                  mapping[fd_team] = api_team["name"]
-                                  break
+                      # Matching avancé
+                      matches, unmatched = match_teams_advanced(fd_teams, api_teams)
                       
-                      if mapping:
+                      if matches:
+                          # Créer le mapping
+                          mapping = {}
+                          for match in matches:
+                              mapping[match["fd_team"]] = match["api_team"]
+                          
                           team_mapping[str(league_id)] = mapping
                           successful_leagues += 1
+                          
+                          success_rate = len(matches) / len(fd_teams) * 100
                           
                           report["leagues"][league_code] = {
                               "name": league_name,
                               "id": league_id,
                               "status": "success",
-                              "mapped_teams": len(mapping),
-                              "total_fd_teams": len(fd_teams),
-                              "total_api_teams": len(api_teams)
+                              "fd_teams_count": len(fd_teams),
+                              "api_teams_count": len(api_teams),
+                              "mapped_teams_count": len(matches),
+                              "success_rate": round(success_rate, 1),
+                              "matches": matches
                           }
                           
-                          print(f"    ✅ {len(mapping)} teams mapped")
+                          if unmatched:
+                              report["unmatched_teams"][league_code] = unmatched
+                          
+                          print(f"    ✅ {len(matches)}/{len(fd_teams)} teams mapped ({success_rate:.1f}%)")
+                          
+                          if unmatched:
+                              print(f"    ⚠️  Unmatched: {unmatched[:3]}{'...' if len(unmatched) > 3 else ''}")
                       else:
                           report["leagues"][league_code] = {
                               "name": league_name,
                               "id": league_id,
-                              "status": "no_mapping"
+                              "status": "no_mapping",
+                              "fd_teams_count": len(fd_teams),
+                              "api_teams_count": len(api_teams)
                           }
                           print(f"    ❌ No teams mapped")
                   
@@ -252,43 +370,66 @@ jobs:
               report["metadata"]["total_leagues_processed"] = successful_leagues
               report["metadata"]["total_teams_mapped"] = sum(len(teams) for teams in team_mapping.values())
               
+              if len(sources) > 0:
+                  report["metadata"]["success_rate"] = round(successful_leagues / len(sources) * 100, 1)
+              
               print(f"\n🎉 Generation completed:")
-              print(f"   📊 {successful_leagues} leagues processed")
+              print(f"   📊 {successful_leagues}/{len(sources)} leagues processed")
               print(f"   🏟️  {report['metadata']['total_teams_mapped']} teams mapped")
               print(f"   📡 {report['metadata']['api_calls_made']} API calls made")
               
               return team_mapping, report
           
-          def save_results(team_mapping, report):
-              """Sauvegarde les résultats"""
-              print("💾 Saving results...")
+          def save_comprehensive_results(team_mapping, report):
+              """Sauvegarde complète des résultats"""
+              print("💾 Saving comprehensive results...")
               
               try:
-                  # Sauvegarder le mapping
+                  # 1. Mapping principal
                   with open("output/team_mapping.json", "w", encoding="utf-8") as f:
                       json.dump(team_mapping, f, indent=2, ensure_ascii=False)
-                  print("✅ team_mapping.json saved")
                   
-                  # Sauvegarder le rapport
-                  with open("output/team_mapping_report.json", "w", encoding="utf-8") as f:
+                  # 2. Rapport détaillé
+                  with open("output/detailed_report.json", "w", encoding="utf-8") as f:
                       json.dump(report, f, indent=2, ensure_ascii=False)
-                  print("✅ team_mapping_report.json saved")
                   
-                  # Créer un CSV simple
+                  # 3. CSV avec détails
                   csv_data = []
-                  for league_id, teams in team_mapping.items():
-                      for fd_name, api_name in teams.items():
-                          csv_data.append({
-                              "league_id": league_id,
-                              "fd_team": fd_name,
-                              "api_team": api_name
-                          })
+                  for league_code, league_info in report["leagues"].items():
+                      if league_info["status"] == "success" and "matches" in league_info:
+                          for match in league_info["matches"]:
+                              csv_data.append({
+                                  "league_code": league_code,
+                                  "league_name": league_info["name"],
+                                  "league_id": league_info["id"],
+                                  "fd_team": match["fd_team"],
+                                  "api_team": match["api_team"],
+                                  "api_team_id": match["api_team_id"],
+                                  "confidence": match["confidence"],
+                                  "match_type": match["match_type"]
+                              })
                   
                   if csv_data:
                       df = pd.DataFrame(csv_data)
-                      df.to_csv("output/team_mapping.csv", index=False)
-                      print("✅ team_mapping.csv saved")
+                      df.to_csv("output/team_mapping_detailed.csv", index=False)
                   
+                  # 4. CSV des non-matchés
+                  unmatched_data = []
+                  for league_code, teams in report.get("unmatched_teams", {}).items():
+                      league_info = report["leagues"][league_code]
+                      for team in teams:
+                          unmatched_data.append({
+                              "league_code": league_code,
+                              "league_name": league_info["name"],
+                              "league_id": league_info["id"],
+                              "fd_team": team
+                          })
+                  
+                  if unmatched_data:
+                      df_unmatched = pd.DataFrame(unmatched_data)
+                      df_unmatched.to_csv("output/unmatched_teams.csv", index=False)
+                  
+                  print("✅ All files saved successfully")
                   return True
               except Exception as e:
                   print(f"❌ Error saving results: {e}")
@@ -297,143 +438,180 @@ jobs:
           if __name__ == "__main__":
               try:
                   mapping, report = main()
-                  success = save_results(mapping, report)
+                  success = save_comprehensive_results(mapping, report)
                   if not success:
                       exit(1)
               except Exception as e:
                   print(f"❌ Script failed: {e}")
-                  # Créer un rapport d'erreur minimal
-                  error_report = {
-                      "metadata": {
-                          "generated_at": datetime.now().isoformat(),
-                          "total_leagues_processed": 0,
-                          "total_teams_mapped": 0,
-                          "api_calls_made": 0,
-                          "success_rate": 0.0
-                      },
-                      "errors": [str(e)]
-                  }
-                  with open("output/team_mapping_report.json", "w") as f:
-                      json.dump(error_report, f, indent=2)
+                  import traceback
+                  traceback.print_exc()
                   exit(1)
           EOF
           
-          # Exécuter le script
-          python -u scripts/simple_team_mapping.py
-          
-          # Vérifier les résultats
-          echo "📁 Checking generated files:"
-          ls -la output/ || echo "No output directory"
+          python -u scripts/comprehensive_team_mapping.py
 
-      - name: Create simple markdown report
+      - name: Create detailed report
         if: always()
         run: |
-          echo "📝 Creating simple report..."
-          
-          # Créer un script Python séparé pour éviter les problèmes d'indentation
-          cat > create_report.py << 'EOF'
+          cat > create_detailed_report.py << 'EOF'
           import json
           import os
           
-          if os.path.exists('output/team_mapping_report.json'):
-              with open('output/team_mapping_report.json', 'r') as f:
+          def create_markdown_report():
+              if not os.path.exists('output/detailed_report.json'):
+                  return "# ❌ No detailed report found"
+              
+              with open('output/detailed_report.json', 'r') as f:
                   report = json.load(f)
               
-              md_lines = []
-              md_lines.append('# 🏆 Team Mapping Report')
-              md_lines.append('')
-              md_lines.append(f'**Generated:** {report["metadata"]["generated_at"]}')
-              md_lines.append(f'**Season:** {report["metadata"]["season"]}')
-              md_lines.append(f'**Leagues processed:** {report["metadata"]["total_leagues_processed"]}')
-              md_lines.append(f'**Teams mapped:** {report["metadata"]["total_teams_mapped"]}')
-              md_lines.append(f'**API calls:** {report["metadata"]["api_calls_made"]}')
-              md_lines.append('')
+              lines = []
+              lines.append("# 🏆 Comprehensive Team Mapping Report")
+              lines.append("")
               
-              if report.get('errors'):
-                  md_lines.append('## ❌ Errors')
-                  for error in report['errors']:
-                      md_lines.append(f'- {error}')
-                  md_lines.append('')
+              # Métadonnées
+              meta = report["metadata"]
+              lines.append(f"**Generated:** {meta['generated_at']}")
+              lines.append(f"**Season:** {meta['season']}")
+              lines.append(f"**Total leagues processed:** {meta['total_leagues_processed']}")
+              lines.append(f"**Total teams mapped:** {meta['total_teams_mapped']}")
+              lines.append(f"**API calls made:** {meta['api_calls_made']}")
+              lines.append(f"**Overall success rate:** {meta['success_rate']}%")
+              lines.append("")
               
-              if report.get('leagues'):
-                  md_lines.append('## 📊 Leagues')
-                  for code, info in report['leagues'].items():
-                      status = '✅' if info['status'] == 'success' else '❌'
-                      md_lines.append(f'- {status} **{code}** ({info["name"]})')
-                      if info['status'] == 'success':
-                          md_lines.append(f'  - Teams mapped: {info.get("mapped_teams", 0)}')
+              # Résumé par ligue
+              lines.append("## 📊 League Summary")
+              lines.append("")
+              lines.append("| League Code | League Name | Status | Teams Mapped | Success Rate |")
+              lines.append("|-------------|-------------|---------|--------------|--------------|")
               
-              with open('output/REPORT.md', 'w') as f:
-                  f.write('\n'.join(md_lines))
+              success_count = 0
+              for code, info in report["leagues"].items():
+                  status_icon = "✅" if info["status"] == "success" else "❌"
+                  mapped_count = info.get("mapped_teams_count", 0)
+                  success_rate = info.get("success_rate", 0)
+                  
+                  lines.append(f"| {code} | {info['name']} | {status_icon} | {mapped_count} | {success_rate}% |")
+                  
+                  if info["status"] == "success":
+                      success_count += 1
               
-              print('✅ Report created')
-          else:
-              print('❌ No report file found, creating error report')
-              with open('output/REPORT.md', 'w') as f:
-                  f.write('# ❌ Team Mapping Failed\n\n')
-                  f.write('The team mapping generation failed. Check the workflow logs for details.\n')
+              lines.append("")
+              lines.append(f"**Summary:** {success_count} successful leagues out of {len(report['leagues'])}")
+              lines.append("")
+              
+              # Top matchings par confiance
+              lines.append("## 🎯 Best Matches (High Confidence)")
+              lines.append("")
+              
+              all_matches = []
+              for code, info in report["leagues"].items():
+                  if info["status"] == "success" and "matches" in info:
+                      for match in info["matches"]:
+                          match["league_code"] = code
+                          match["league_name"] = info["name"]
+                          all_matches.append(match)
+              
+              # Trier par confiance
+              all_matches.sort(key=lambda x: x["confidence"], reverse=True)
+              
+              if all_matches:
+                  lines.append("| League | FD Team | API Team | Confidence | Type |")
+                  lines.append("|--------|---------|----------|------------|------|")
+                  
+                  for match in all_matches[:20]:  # Top 20
+                      lines.append(f"| {match['league_code']} | {match['fd_team']} | {match['api_team']} | {match['confidence']} | {match['match_type']} |")
+              
+              lines.append("")
+              
+              # Teams non matchées
+              if report.get("unmatched_teams"):
+                  lines.append("## ⚠️ Unmatched Teams")
+                  lines.append("")
+                  
+                  for league_code, teams in report["unmatched_teams"].items():
+                      if teams:  # Si il y a des équipes non matchées
+                          league_name = report["leagues"][league_code]["name"]
+                          lines.append(f"### {league_code} - {league_name}")
+                          for team in teams[:10]:  # Max 10 par ligue
+                              lines.append(f"- {team}")
+                          if len(teams) > 10:
+                              lines.append(f"- ... and {len(teams) - 10} more")
+                          lines.append("")
+              
+              # Erreurs
+              if report.get("errors"):
+                  lines.append("## ❌ Errors Encountered")
+                  lines.append("")
+                  for error in report["errors"][:10]:  # Max 10 erreurs
+                      lines.append(f"- {error}")
+                  lines.append("")
+              
+              # Instructions
+              lines.append("## 📖 Usage Instructions")
+              lines.append("")
+              lines.append("### Using the mapping in Python:")
+              lines.append("```python")
+              lines.append("import json")
+              lines.append("")
+              lines.append("# Load the mapping")
+              lines.append('with open("team_mapping.json", "r") as f:')
+              lines.append("    mapping = json.load(f)")
+              lines.append("")
+              lines.append("# Get API team name")
+              lines.append('league_id = "39"  # Premier League')
+              lines.append('fd_team_name = "Arsenal"')
+              lines.append("if league_id in mapping and fd_team_name in mapping[league_id]:")
+              lines.append("    api_team_name = mapping[league_id][fd_team_name]")
+              lines.append('    print(f"FD: {fd_team_name} -> API: {api_team_name}")')
+              lines.append("```")
+              lines.append("")
+              
+              return "\n".join(lines)
+          
+          # Créer le rapport
+          markdown_content = create_markdown_report()
+          with open("output/COMPREHENSIVE_REPORT.md", "w", encoding="utf-8") as f:
+              f.write(markdown_content)
+          
+          print("✅ Detailed markdown report created")
           EOF
           
-          python create_report.py
-          rm create_report.py
+          python create_detailed_report.py
 
-      - name: Upload artifacts
+      - name: Upload comprehensive artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: team-mapping-results
+          name: comprehensive-team-mapping
           path: output/
           retention-days: 30
 
-      - name: Create summary
+      - name: Final summary
         if: always()
         run: |
-          echo "## 📋 Team Mapping Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## 🏆 Comprehensive Team Mapping Results" >> $GITHUB_STEP_SUMMARY
           
-          # Créer un script pour éviter les problèmes d'indentation
-          cat > summary_script.py << 'EOF'
+          if [ -f "output/detailed_report.json" ]; then
+              python -c "
           import json
-          import os
+          with open('output/detailed_report.json', 'r') as f:
+              report = json.load(f)
           
-          if os.path.exists('output/team_mapping_report.json'):
-              try:
-                  with open('output/team_mapping_report.json', 'r') as f:
-                      report = json.load(f)
-                  print(f"LEAGUES={report['metadata']['total_leagues_processed']}")
-                  print(f"TEAMS={report['metadata']['total_teams_mapped']}")
-                  print(f"STATUS=success")
-              except:
-                  print("LEAGUES=0")
-                  print("TEAMS=0")
-                  print("STATUS=failed")
-          else:
-              print("LEAGUES=0")
-              print("TEAMS=0")
-              print("STATUS=failed")
-          EOF
-          
-          # Exécuter le script et capturer les variables
-          eval $(python summary_script.py)
-          rm summary_script.py
-          
-          if [ "$STATUS" = "success" ]; then
-              echo "✅ **Status:** Completed" >> $GITHUB_STEP_SUMMARY
-              echo "📊 **Leagues:** $LEAGUES" >> $GITHUB_STEP_SUMMARY
-              echo "🏟️ **Teams:** $TEAMS" >> $GITHUB_STEP_SUMMARY
+          meta = report['metadata']
+          print(f'✅ **Status:** Completed successfully')
+          print(f'📊 **Leagues processed:** {meta[\"total_leagues_processed\"]}')
+          print(f'🏟️ **Teams mapped:** {meta[\"total_teams_mapped\"]}')  
+          print(f'📡 **API calls:** {meta[\"api_calls_made\"]}')
+          print(f'🎯 **Success rate:** {meta[\"success_rate\"]}%')
+          " >> $GITHUB_STEP_SUMMARY
           else
-              echo "❌ **Status:** Failed" >> $GITHUB_STEP_SUMMARY
+              echo "❌ **Status:** Failed to generate mapping" >> $GITHUB_STEP_SUMMARY
           fi
           
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📁 **Files generated:**" >> $GITHUB_STEP_SUMMARY
-          
-          if [ -d "output" ]; then
-              for file in output/*; do
-                  if [ -f "$file" ]; then
-                      filename=$(basename "$file")
-                      echo "- \`$filename\`" >> $GITHUB_STEP_SUMMARY
-                  fi
-              done
-          else
-              echo "- No files generated" >> $GITHUB_STEP_SUMMARY
-          fi 
+          echo "📁 **Generated files:**" >> $GITHUB_STEP_SUMMARY
+          ls -la output/ | tail -n +2 | while read line; do
+              filename=$(echo $line | awk '{print $9}')
+              filesize=$(echo $line | awk '{print $5}')
+              echo "- \`$filename\` (${filesize} bytes)" >> $GITHUB_STEP_SUMMARY
+          done 
