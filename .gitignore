@@ -1,0 +1,37 @@
+# Fichier .env - Ne jamais commiter les secrets !
+.env
+
+# Dépendances et environnements virtuels
+venv/
+*.venv
+env/
+.env.*
+!/.env.template
+
+# Fichiers de cache Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Fichiers de base de données
+*.sqlite3
+*.db
+
+# Fichiers de configuration d'IDE
+.vscode/
+.idea/
+
+# Fichiers de build et de distribution
+build/
+dist/
+*.egg-info/
+
+# Fichiers de logs
+*.log
+
+# Fichiers de test
+.pytest_cache/
+.coverage
+
+# Fichiers Streamlit
+.streamlit/

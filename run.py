@@ -14,6 +14,7 @@ from src.api.football_api import FootballAPI
 from src.services.clone_detector import clone_detector
 from src.services.elo_system import elo_system
 from src.services.odds_analyzer import odds_analyzer
+from src.services.prop_bet_analyzer import prop_bet_analyzer
 from src.models.database import db
 
 def main():
@@ -47,6 +48,11 @@ def main():
                 odds_data = api.get_odds(fixture_id)
                 if odds_data:
                     odds_analyzer.store_odds(fixture_id, odds_data)
+
+                # Si le match est terminé, analyser les stats des joueurs pour les Prop Bets
+                if fixture['fixture']['status']['short'] == 'FT':
+                    print(f"    analysing player stats for fixture {fixture_id}")
+                    prop_bet_analyzer.update_and_analyze_player_stats(fixture_id)
 
                 processed_matches += 1
                 print(f"   ✅ Match {processed_matches}/{len(today_fixtures)} traité")

@@ -9,6 +9,10 @@ class FootballAPI:
     def __init__(self):
         self.base_url = Settings.API.BASE_URL
         self.headers = Settings.API.headers
+
+        if not self.headers.get('x-rapidapi-key'):
+            raise ValueError("Clé API manquante. Veuillez définir RAPIDAPI_KEY dans votre fichier .env")
+
         self.rate_limit_delay = 1  # 1 seconde entre les requêtes
         
     def _make_request(self, endpoint: str, params: Dict = None) -> Optional[Dict]:
@@ -69,6 +73,15 @@ class FootballAPI:
         }
         
         return self._make_request('odds', params)
+
+    def get_fixture_player_stats(self, fixture_id: int) -> Optional[List[Dict]]:
+        """Récupère les statistiques des joueurs pour un match donné"""
+        params = {
+            'fixture': fixture_id
+        }
+
+        data = self._make_request('fixtures/players', params)
+        return data['response'] if data and 'response' in data else None
     
     def get_team_form(self, team_id: int, league_id: int) -> List[Dict]:
         """Récupère la forme récente d'une équipe (5 derniers matchs)"""

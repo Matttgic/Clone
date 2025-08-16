@@ -1,11 +1,17 @@
 import os
 from dataclasses import dataclass
 from typing import Dict, Any
+from dotenv import load_dotenv
+
+# Charge les variables d'environnement à partir d'un fichier .env
+load_dotenv()
 
 @dataclass
 class APIConfig:
     BASE_URL: str = "https://api-football-v1.p.rapidapi.com/v3"
-    API_KEY: str = "e1e76b8e3emsh2445ffb97db0128p158afdjsnb3175ce8d916"
+    # Récupère la clé API depuis les variables d'environnement pour plus de sécurité.
+    # Assurez-vous de créer un fichier .env avec votre RAPIDAPI_KEY.
+    API_KEY: str = os.getenv("RAPIDAPI_KEY")
     HOST: str = "api-football-v1.p.rapidapi.com"
     
     @property

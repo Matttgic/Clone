@@ -9,6 +9,7 @@ Un système complet d'analyse de matchs de football pour détecter les "clones" 
 - 💰 **Analyse des côtes** : Détection des value bets (Bet365 & Pinnacle)
 - 🔍 **Détecteur de clones** : Identification des matchs similaires
 - 📊 **Analyses statistiques** : Performance des équipes et historiques
+- 👤 **Analyse Prop Bets** : Prédictions sur les performances des joueurs (ex: buteurs)
 - 📱 **Interface Streamlit** : Dashboard interactif pour visualiser les données
 - 📈 **Historique des paris** : Suivi complet des performances
 
@@ -75,6 +76,11 @@ Modifier `config/settings.py` pour :
 - Historique complet
 - Calcul ROI et win rate
 - Analyse des performances
+
+### 5. 👤 Analyse Prop Bets
+- Analyse des statistiques individuelles des joueurs par match.
+- Identification des opportunités de paris sur les joueurs (ex: buteur).
+- Modèle de prédiction simple basé sur les performances récentes.
 
 ## 🏗️ Architecture
 

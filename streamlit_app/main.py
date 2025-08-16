@@ -39,9 +39,10 @@ class FootballCloneApp:
                 st.experimental_rerun()
         
         # Tabs principales
-        tab1, tab2, tab3, tab4 = st.tabs([
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "🏆 Matchs du Jour", 
             "🔍 Clones Détectés", 
+            "👤 Prop Bets",
             "📈 Statistiques", 
             "💰 Historique Paris"
         ])
@@ -51,11 +52,14 @@ class FootballCloneApp:
         
         with tab2:
             self.show_clone_analysis()
-        
+
         with tab3:
-            self.show_statistics_page()
+            self.show_prop_bets_page()
         
         with tab4:
+            self.show_statistics_page()
+
+        with tab5:
             self.show_betting_history()
     
     def refresh_data(self):
@@ -274,7 +278,48 @@ class FootballCloneApp:
                 st.dataframe(df, use_container_width=True)
             else:
                 st.info("Aucune donnée ELO disponible")
-    
+
+    def show_prop_bets_page(self):
+        """Affiche les prédictions pour les paris joueurs (Prop Bets)"""
+        st.header("👤 Prédictions sur les Joueurs (Prop Bets)")
+        from src.models.database import db
+
+        with db.get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT
+                    p.created_at,
+                    p.predicted_outcome,
+                    p.confidence,
+                    h.name || ' vs ' || a.name as match_name,
+                    h.logo as home_logo,
+                    a.logo as away_logo
+                FROM predictions p
+                JOIN matches m ON p.fixture_id = m.fixture_id
+                JOIN teams h ON m.home_team_id = h.id
+                JOIN teams a ON m.away_team_id = a.id
+                WHERE p.prediction_type = 'BUTEUR'
+                ORDER BY p.created_at DESC
+                LIMIT 50
+            """)
+            prop_bets = cursor.fetchall()
+
+        if not prop_bets:
+            st.info("ℹ️ Aucune prédiction de buteur disponible pour le moment. Les données sont analysées après la fin des matchs.")
+            return
+
+        st.success(f"🔥 {len(prop_bets)} prédictions de buteurs trouvées.")
+
+        for bet in prop_bets:
+            col1, col2 = st.columns([1, 4])
+            with col1:
+                st.image(bet['home_logo'], width=50)
+                st.image(bet['away_logo'], width=50)
+            with col2:
+                st.markdown(f"**Match:** {bet['match_name']}")
+                st.markdown(f"**Pari Suggéré:** `{bet['predicted_outcome']}`")
+                st.progress(bet['confidence'], text=f"Confiance: {bet['confidence']:.0%}")
+            st.markdown("---")
+
     def show_betting_history(self):
         """Affiche l'historique des paris"""
         st.header("💰 Historique des Paris")

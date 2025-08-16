@@ -127,6 +127,29 @@ class Database:
                     detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+
+            # Table pour les statistiques des joueurs par match (pour les Prop Bets)
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS player_fixture_stats (
+                    id INTEGER PRIMARY KEY,
+                    fixture_id INTEGER,
+                    team_id INTEGER,
+                    player_id INTEGER,
+                    player_name TEXT,
+                    minutes_played INTEGER,
+                    rating REAL,
+                    goals INTEGER,
+                    assists INTEGER,
+                    shots_total INTEGER,
+                    shots_on_goal INTEGER,
+                    passes_total INTEGER,
+                    passes_accuracy REAL,
+                    tackles_total INTEGER,
+                    dribbles_success INTEGER,
+                    fouls_committed INTEGER,
+                    UNIQUE(fixture_id, player_id)
+                )
+            ''')
             
             conn.commit()
 
