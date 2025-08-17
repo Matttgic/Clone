@@ -1,8 +1,8 @@
 📋 DAILY SUMMARY REPORT
 ======================
-Date: Sat Aug 16 14:18:30 UTC 2025
+Date: Sun Aug 17 08:23:43 UTC 2025
 
 📊 **Stats:**
-- Matches today: 254
-- Predictions: 1524
+- Matches today: 155
+- Predictions: 930
 - Teams in DB: 0
