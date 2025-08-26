@@ -1,6 +1,6 @@
 [
   {
-    "id":11209,
+    "id":11263,
     "fixture_id":"1338503",
     "date":"2025-08-26T00:00:00+00:00",
     "league":"242",
@@ -12,12 +12,12 @@
     "prob":0.4800487499,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11210,
+    "id":11264,
     "fixture_id":"1338503",
     "date":"2025-08-26T00:00:00+00:00",
     "league":"242",
@@ -29,12 +29,12 @@
     "prob":0.25,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11211,
+    "id":11265,
     "fixture_id":"1338503",
     "date":"2025-08-26T00:00:00+00:00",
     "league":"242",
@@ -46,12 +46,12 @@
     "prob":0.2699512501,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11212,
+    "id":11266,
     "fixture_id":"1338503",
     "date":"2025-08-26T00:00:00+00:00",
     "league":"242",
@@ -63,12 +63,12 @@
     "prob":0.4800487499,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11213,
+    "id":11267,
     "fixture_id":"1338503",
     "date":"2025-08-26T00:00:00+00:00",
     "league":"242",
@@ -80,12 +80,12 @@
     "prob":0.25,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11214,
+    "id":11268,
     "fixture_id":"1338503",
     "date":"2025-08-26T00:00:00+00:00",
     "league":"242",
@@ -97,12 +97,12 @@
     "prob":0.2699512501,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11215,
+    "id":11269,
     "fixture_id":"1351243",
     "date":"2025-08-26T00:00:00+00:00",
     "league":"71",
@@ -114,12 +114,12 @@
     "prob":0.4800487499,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11216,
+    "id":11270,
     "fixture_id":"1351243",
     "date":"2025-08-26T00:00:00+00:00",
     "league":"71",
@@ -131,12 +131,12 @@
     "prob":0.25,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11217,
+    "id":11271,
     "fixture_id":"1351243",
     "date":"2025-08-26T00:00:00+00:00",
     "league":"71",
@@ -148,12 +148,12 @@
     "prob":0.2699512501,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11218,
+    "id":11272,
     "fixture_id":"1351243",
     "date":"2025-08-26T00:00:00+00:00",
     "league":"71",
@@ -165,12 +165,12 @@
     "prob":0.4800487499,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11219,
+    "id":11273,
     "fixture_id":"1351243",
     "date":"2025-08-26T00:00:00+00:00",
     "league":"71",
@@ -182,12 +182,12 @@
     "prob":0.25,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11220,
+    "id":11274,
     "fixture_id":"1351243",
     "date":"2025-08-26T00:00:00+00:00",
     "league":"71",
@@ -199,12 +199,12 @@
     "prob":0.2699512501,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11221,
+    "id":11275,
     "fixture_id":"1435551",
     "date":"2025-08-26T16:45:00+00:00",
     "league":"2",
@@ -216,12 +216,12 @@
     "prob":0.4800487499,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11222,
+    "id":11276,
     "fixture_id":"1435551",
     "date":"2025-08-26T16:45:00+00:00",
     "league":"2",
@@ -233,12 +233,12 @@
     "prob":0.25,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11223,
+    "id":11277,
     "fixture_id":"1435551",
     "date":"2025-08-26T16:45:00+00:00",
     "league":"2",
@@ -250,12 +250,12 @@
     "prob":0.2699512501,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11224,
+    "id":11278,
     "fixture_id":"1435551",
     "date":"2025-08-26T16:45:00+00:00",
     "league":"2",
@@ -267,12 +267,12 @@
     "prob":0.4800487499,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11225,
+    "id":11279,
     "fixture_id":"1435551",
     "date":"2025-08-26T16:45:00+00:00",
     "league":"2",
@@ -284,12 +284,12 @@
     "prob":0.25,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11226,
+    "id":11280,
     "fixture_id":"1435551",
     "date":"2025-08-26T16:45:00+00:00",
     "league":"2",
@@ -301,12 +301,12 @@
     "prob":0.2699512501,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11227,
+    "id":11281,
     "fixture_id":"1332824",
     "date":"2025-08-26T18:00:00+00:00",
     "league":"164",
@@ -318,12 +318,12 @@
     "prob":0.4800487499,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11228,
+    "id":11282,
     "fixture_id":"1332824",
     "date":"2025-08-26T18:00:00+00:00",
     "league":"164",
@@ -335,12 +335,12 @@
     "prob":0.25,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11229,
+    "id":11283,
     "fixture_id":"1332824",
     "date":"2025-08-26T18:00:00+00:00",
     "league":"164",
@@ -352,12 +352,12 @@
     "prob":0.2699512501,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11230,
+    "id":11284,
     "fixture_id":"1332824",
     "date":"2025-08-26T18:00:00+00:00",
     "league":"164",
@@ -369,12 +369,12 @@
     "prob":0.4800487499,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11231,
+    "id":11285,
     "fixture_id":"1332824",
     "date":"2025-08-26T18:00:00+00:00",
     "league":"164",
@@ -386,12 +386,12 @@
     "prob":0.25,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11232,
+    "id":11286,
     "fixture_id":"1332824",
     "date":"2025-08-26T18:00:00+00:00",
     "league":"164",
@@ -403,12 +403,12 @@
     "prob":0.2699512501,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11233,
+    "id":11287,
     "fixture_id":"1378959",
     "date":"2025-08-26T18:45:00+00:00",
     "league":"81",
@@ -420,12 +420,12 @@
     "prob":0.4800487499,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11234,
+    "id":11288,
     "fixture_id":"1378959",
     "date":"2025-08-26T18:45:00+00:00",
     "league":"81",
@@ -437,12 +437,12 @@
     "prob":0.25,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11235,
+    "id":11289,
     "fixture_id":"1378959",
     "date":"2025-08-26T18:45:00+00:00",
     "league":"81",
@@ -454,12 +454,12 @@
     "prob":0.2699512501,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11236,
+    "id":11290,
     "fixture_id":"1378959",
     "date":"2025-08-26T18:45:00+00:00",
     "league":"81",
@@ -471,12 +471,12 @@
     "prob":0.4800487499,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11237,
+    "id":11291,
     "fixture_id":"1378959",
     "date":"2025-08-26T18:45:00+00:00",
     "league":"81",
@@ -488,12 +488,12 @@
     "prob":0.25,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11238,
+    "id":11292,
     "fixture_id":"1378959",
     "date":"2025-08-26T18:45:00+00:00",
     "league":"81",
@@ -505,12 +505,12 @@
     "prob":0.2699512501,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11239,
+    "id":11293,
     "fixture_id":"1440138",
     "date":"2025-08-26T18:45:00+00:00",
     "league":"45",
@@ -522,12 +522,12 @@
     "prob":0.4800487499,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11240,
+    "id":11294,
     "fixture_id":"1440138",
     "date":"2025-08-26T18:45:00+00:00",
     "league":"45",
@@ -539,12 +539,12 @@
     "prob":0.25,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11241,
+    "id":11295,
     "fixture_id":"1440138",
     "date":"2025-08-26T18:45:00+00:00",
     "league":"45",
@@ -556,12 +556,12 @@
     "prob":0.2699512501,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11242,
+    "id":11296,
     "fixture_id":"1440138",
     "date":"2025-08-26T18:45:00+00:00",
     "league":"45",
@@ -573,12 +573,12 @@
     "prob":0.4800487499,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11243,
+    "id":11297,
     "fixture_id":"1440138",
     "date":"2025-08-26T18:45:00+00:00",
     "league":"45",
@@ -590,12 +590,12 @@
     "prob":0.25,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11244,
+    "id":11298,
     "fixture_id":"1440138",
     "date":"2025-08-26T18:45:00+00:00",
     "league":"45",
@@ -607,12 +607,12 @@
     "prob":0.2699512501,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11245,
+    "id":11299,
     "fixture_id":"1424398",
     "date":"2025-08-26T19:00:00+00:00",
     "league":"2",
@@ -624,12 +624,12 @@
     "prob":0.4800487499,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11246,
+    "id":11300,
     "fixture_id":"1424398",
     "date":"2025-08-26T19:00:00+00:00",
     "league":"2",
@@ -641,12 +641,12 @@
     "prob":0.25,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11247,
+    "id":11301,
     "fixture_id":"1424398",
     "date":"2025-08-26T19:00:00+00:00",
     "league":"2",
@@ -658,12 +658,12 @@
     "prob":0.2699512501,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11248,
+    "id":11302,
     "fixture_id":"1424398",
     "date":"2025-08-26T19:00:00+00:00",
     "league":"2",
@@ -675,12 +675,12 @@
     "prob":0.4800487499,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11249,
+    "id":11303,
     "fixture_id":"1424398",
     "date":"2025-08-26T19:00:00+00:00",
     "league":"2",
@@ -692,12 +692,12 @@
     "prob":0.25,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11250,
+    "id":11304,
     "fixture_id":"1424398",
     "date":"2025-08-26T19:00:00+00:00",
     "league":"2",
@@ -709,12 +709,12 @@
     "prob":0.2699512501,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11251,
+    "id":11305,
     "fixture_id":"1435552",
     "date":"2025-08-26T19:00:00+00:00",
     "league":"2",
@@ -726,12 +726,12 @@
     "prob":0.4800487499,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11252,
+    "id":11306,
     "fixture_id":"1435552",
     "date":"2025-08-26T19:00:00+00:00",
     "league":"2",
@@ -743,12 +743,12 @@
     "prob":0.25,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11253,
+    "id":11307,
     "fixture_id":"1435552",
     "date":"2025-08-26T19:00:00+00:00",
     "league":"2",
@@ -760,12 +760,12 @@
     "prob":0.2699512501,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11254,
+    "id":11308,
     "fixture_id":"1435552",
     "date":"2025-08-26T19:00:00+00:00",
     "league":"2",
@@ -777,12 +777,12 @@
     "prob":0.4800487499,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11255,
+    "id":11309,
     "fixture_id":"1435552",
     "date":"2025-08-26T19:00:00+00:00",
     "league":"2",
@@ -794,12 +794,12 @@
     "prob":0.25,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11256,
+    "id":11310,
     "fixture_id":"1435552",
     "date":"2025-08-26T19:00:00+00:00",
     "league":"2",
@@ -811,12 +811,12 @@
     "prob":0.2699512501,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11257,
+    "id":11311,
     "fixture_id":"1332829",
     "date":"2025-08-26T19:15:00+00:00",
     "league":"164",
@@ -828,12 +828,12 @@
     "prob":0.4800487499,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11258,
+    "id":11312,
     "fixture_id":"1332829",
     "date":"2025-08-26T19:15:00+00:00",
     "league":"164",
@@ -845,12 +845,12 @@
     "prob":0.25,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11259,
+    "id":11313,
     "fixture_id":"1332829",
     "date":"2025-08-26T19:15:00+00:00",
     "league":"164",
@@ -862,12 +862,12 @@
     "prob":0.2699512501,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":null
   },
   {
-    "id":11260,
+    "id":11314,
     "fixture_id":"1332829",
     "date":"2025-08-26T19:15:00+00:00",
     "league":"164",
@@ -879,12 +879,12 @@
     "prob":0.4800487499,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11261,
+    "id":11315,
     "fixture_id":"1332829",
     "date":"2025-08-26T19:15:00+00:00",
     "league":"164",
@@ -896,12 +896,12 @@
     "prob":0.25,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   },
   {
-    "id":11262,
+    "id":11316,
     "fixture_id":"1332829",
     "date":"2025-08-26T19:15:00+00:00",
     "league":"164",
@@ -913,7 +913,7 @@
     "prob":0.2699512501,
     "odd":null,
     "value":null,
-    "created_at":"2025-08-26 08:26:03",
+    "created_at":"2025-08-26 14:10:58",
     "confidence":0.25,
     "sample_size":0.0
   }
